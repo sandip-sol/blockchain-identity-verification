@@ -19,6 +19,11 @@ module.exports = {
         localhost: {
             url: "http://127.0.0.1:8545"
         },
+        hoodi: {
+            url: process.env.HOODI_RPC || "https://hoodi.infura.io/v3/",
+            accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+            chainId: 560048
+        },
         mumbai: {
             url: process.env.POLYGON_MUMBAI_RPC || "https://rpc-mumbai.maticvigil.com",
             accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
@@ -32,6 +37,7 @@ module.exports = {
     },
     etherscan: {
         apiKey: {
+            hoodi: process.env.HOODI_API_KEY || "",
             polygonMumbai: process.env.POLYGONSCAN_API_KEY || "",
             polygon: process.env.POLYGONSCAN_API_KEY || ""
         }
