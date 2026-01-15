@@ -1,5 +1,3 @@
-const { create } = require('ipfs-http-client');
-
 /**
  * IPFS Service
  * Handles decentralized storage operations for encrypted documents
@@ -18,6 +16,9 @@ class IPFSService {
         if (this.isInitialized) return;
 
         try {
+            // Dynamic import for ESM compatibility
+            const { create } = await import('ipfs-http-client');
+
             const ipfsConfig = {
                 host: process.env.IPFS_HOST || 'localhost',
                 port: process.env.IPFS_PORT || 5001,
