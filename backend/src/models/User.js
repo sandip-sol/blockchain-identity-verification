@@ -74,4 +74,40 @@ userSchema.index({ verificationStatus: 1 });
 userSchema.index({ verificationType: 1 });
 userSchema.index({ identityTokenId: 1 });
 
-module.exports = mongoose.model('User', userSchema);
+const MongoUser = mongoose.model('User', userSchema);
+const UserLocal = require('./UserLocal');
+
+module.exports = {
+    findOne: async (query) => {
+        if (mongoose.connection.readyState === 1) {
+            return MongoUser.findOne(query);
+        }
+        console.warn('⚠️ MongoDB not connected. Using local file storage.');
+        return UserLocal.findOne(query);
+    },
+    // Constructor proxy
+    // When "new User({...})" is called, we need a way to redirect. 
+    // Since module.exports is an object here, we can't use "new".
+    // BUT the existing code does "new User(...)". 
+    // So we must export a Class/Function that behaves conditionally.
+};
+
+// Better approach to preserve "new User()" syntax:
+const ProxyModel = class {
+    constructor(data) {
+        if (mongoose.connection.readyState === 1) {
+            return new MongoUser(data);
+        }
+        console.warn('⚠️ MongoDB not connected. Using local file storage.');
+        return new UserLocal(data);
+    }
+
+    static async findOne(query) {
+        if (mongoose.connection.readyState === 1) {
+            return MongoUser.findOne(query);
+        }
+        return UserLocal.findOne(query);
+    }
+};
+
+module.exports = ProxyModel;

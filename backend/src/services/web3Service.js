@@ -23,7 +23,7 @@ class Web3Service {
 
         try {
             // Setup provider
-            const rpcUrl = process.env.POLYGON_MUMBAI_RPC || 'http://localhost:8545';
+            const rpcUrl = process.env.RPC_URL || process.env.POLYGON_MUMBAI_RPC || 'http://localhost:8545';
             this.provider = new ethers.JsonRpcProvider(rpcUrl);
 
             // Setup signer if private key available

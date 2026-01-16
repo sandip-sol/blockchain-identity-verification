@@ -97,7 +97,16 @@ router.post('/submit', upload.fields([
         });
     } catch (error) {
         console.error('KYC submission error:', error);
-        res.status(500).json({ error: error.message });
+
+        // Debugging: Write error to file
+        const fs = require('fs');
+        const path = require('path');
+        fs.appendFileSync(
+            path.join(__dirname, '../../debug_error.log'),
+            `${new Date().toISOString()} - ${error.stack}\n\n`
+        );
+
+        res.status(500).json({ error: error.message, stack: error.stack });
     }
 });
 
