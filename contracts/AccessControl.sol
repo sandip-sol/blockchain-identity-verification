@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.30;
 
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
@@ -11,29 +11,29 @@ import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
  */
 contract DataAccessControl is EIP712 {
     using ECDSA for bytes32;
-    
+
     struct AccessGrant {
-        address requester;          // Who is requesting access
-        address dataOwner;          // Owner of the data
-        uint256[] tokenIds;         // Token IDs being accessed
-        uint256 grantedAt;          // Grant timestamp
-        uint256 expiresAt;          // Expiration timestamp
-        bool isRevoked;             // Revocation status
-        string purpose;             // Purpose of access request
+        address requester; // Who is requesting access
+        address dataOwner; // Owner of the data
+        uint256[] tokenIds; // Token IDs being accessed
+        uint256 grantedAt; // Grant timestamp
+        uint256 expiresAt; // Expiration timestamp
+        bool isRevoked; // Revocation status
+        string purpose; // Purpose of access request
     }
-    
+
     // Mapping from access ID to grant details
     mapping(bytes32 => AccessGrant) public accessGrants;
-    
+
     // Mapping from data owner to list of access grant IDs
     mapping(address => bytes32[]) public ownerAccessGrants;
-    
+
     // Mapping from requester to list of access grant IDs
     mapping(address => bytes32[]) public requesterAccessGrants;
-    
+
     // Nonce for preventing replay attacks
     mapping(address => uint256) public nonces;
-    
+
     // Events
     event AccessGranted(
         bytes32 indexed accessId,
@@ -43,20 +43,21 @@ contract DataAccessControl is EIP712 {
         uint256 expiresAt,
         string purpose
     );
-    
+
     event AccessRevoked(
         bytes32 indexed accessId,
         address indexed dataOwner,
         address indexed requester
     );
-    
+
     // EIP-712 Type Hash
-    bytes32 public constant ACCESS_GRANT_TYPEHASH = keccak256(
-        "AccessGrant(address requester,uint256[] tokenIds,uint256 expiresAt,string purpose,uint256 nonce)"
-    );
-    
+    bytes32 public constant ACCESS_GRANT_TYPEHASH =
+        keccak256(
+            "AccessGrant(address requester,uint256[] tokenIds,uint256 expiresAt,string purpose,uint256 nonce)"
+        );
+
     constructor() EIP712("KYC-KYB DataAccessControl", "1") {}
-    
+
     /**
      * @dev Grant access to data with user signature (EIP-712)
      * @param requester Address requesting access
@@ -75,7 +76,7 @@ contract DataAccessControl is EIP712 {
         require(requester != address(0), "Invalid requester address");
         require(tokenIds.length > 0, "No token IDs provided");
         require(expiresAt > block.timestamp, "Invalid expiration time");
-        
+
         // Verify EIP-712 signature
         bytes32 structHash = keccak256(
             abi.encode(
@@ -87,15 +88,15 @@ contract DataAccessControl is EIP712 {
                 nonces[msg.sender]
             )
         );
-        
+
         bytes32 digest = _hashTypedDataV4(structHash);
         address signer = digest.recover(signature);
-        
+
         require(signer == msg.sender, "Invalid signature");
-        
+
         // Increment nonce to prevent replay
         nonces[msg.sender]++;
-        
+
         // Create unique access ID
         bytes32 accessId = keccak256(
             abi.encodePacked(
@@ -106,7 +107,7 @@ contract DataAccessControl is EIP712 {
                 nonces[msg.sender]
             )
         );
-        
+
         // Store access grant
         accessGrants[accessId] = AccessGrant({
             requester: requester,
@@ -117,15 +118,22 @@ contract DataAccessControl is EIP712 {
             isRevoked: false,
             purpose: purpose
         });
-        
+
         ownerAccessGrants[msg.sender].push(accessId);
         requesterAccessGrants[requester].push(accessId);
-        
-        emit AccessGranted(accessId, msg.sender, requester, tokenIds, expiresAt, purpose);
-        
+
+        emit AccessGranted(
+            accessId,
+            msg.sender,
+            requester,
+            tokenIds,
+            expiresAt,
+            purpose
+        );
+
         return accessId;
     }
-    
+
     /**
      * @dev Revoke previously granted access
      * @param accessId ID of the access grant to revoke
@@ -134,12 +142,12 @@ contract DataAccessControl is EIP712 {
         AccessGrant storage grant = accessGrants[accessId];
         require(grant.dataOwner == msg.sender, "Not authorized");
         require(!grant.isRevoked, "Already revoked");
-        
+
         grant.isRevoked = true;
-        
+
         emit AccessRevoked(accessId, msg.sender, grant.requester);
     }
-    
+
     /**
      * @dev Check if requester currently has valid access to a specific token
      * @param requester Address of the requester
@@ -152,14 +160,14 @@ contract DataAccessControl is EIP712 {
         uint256 tokenId
     ) external view returns (bool) {
         bytes32[] memory grants = ownerAccessGrants[dataOwner];
-        
+
         for (uint256 i = 0; i < grants.length; i++) {
             AccessGrant memory grant = accessGrants[grants[i]];
-            
+
             if (grant.requester != requester) continue;
             if (grant.isRevoked) continue;
             if (grant.expiresAt <= block.timestamp) continue;
-            
+
             // Check if tokenId is in the granted tokens
             for (uint256 j = 0; j < grant.tokenIds.length; j++) {
                 if (grant.tokenIds[j] == tokenId) {
@@ -167,43 +175,53 @@ contract DataAccessControl is EIP712 {
                 }
             }
         }
-        
+
         return false;
     }
-    
+
     /**
      * @dev Get all access grants for a data owner
      * @param dataOwner Address of the data owner
      */
-    function getAccessLog(address dataOwner) external view returns (bytes32[] memory) {
+    function getAccessLog(
+        address dataOwner
+    ) external view returns (bytes32[] memory) {
         return ownerAccessGrants[dataOwner];
     }
-    
+
     /**
      * @dev Get all access grants requested by an address
      * @param requester Address of the requester
      */
-    function getRequesterAccessLog(address requester) external view returns (bytes32[] memory) {
+    function getRequesterAccessLog(
+        address requester
+    ) external view returns (bytes32[] memory) {
         return requesterAccessGrants[requester];
     }
-    
+
     /**
      * @dev Get details of a specific access grant
      * @param accessId ID of the access grant
      */
-    function getAccessGrantDetails(bytes32 accessId) external view returns (
-        address requester,
-        address dataOwner,
-        uint256[] memory tokenIds,
-        uint256 grantedAt,
-        uint256 expiresAt,
-        bool isRevoked,
-        string memory purpose,
-        bool isActive
-    ) {
+    function getAccessGrantDetails(
+        bytes32 accessId
+    )
+        external
+        view
+        returns (
+            address requester,
+            address dataOwner,
+            uint256[] memory tokenIds,
+            uint256 grantedAt,
+            uint256 expiresAt,
+            bool isRevoked,
+            string memory purpose,
+            bool isActive
+        )
+    {
         AccessGrant memory grant = accessGrants[accessId];
         bool active = !grant.isRevoked && grant.expiresAt > block.timestamp;
-        
+
         return (
             grant.requester,
             grant.dataOwner,
@@ -215,7 +233,7 @@ contract DataAccessControl is EIP712 {
             active
         );
     }
-    
+
     /**
      * @dev Get current nonce for an address (for signing)
      * @param account Address to get nonce for
