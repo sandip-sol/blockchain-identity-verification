@@ -64,8 +64,8 @@ kyc-kyb-blockchain/
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
-   cd kyc-kyb-blockchain
+   git clone https://github.com/sandip-sol/blockchain-identity-verification.git
+   cd blockchain-identity-verification
    ```
 
 2. **Install root dependencies**
