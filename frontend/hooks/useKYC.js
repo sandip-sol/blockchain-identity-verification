@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { useAccount } from 'wagmi';
+import { useAccount, useSignMessage } from 'wagmi';
 import { useIdentityToken } from './useContract';
 import axios from 'axios';
 
@@ -9,6 +9,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 export function useKYC() {
     const { address } = useAccount();
+    const { signMessageAsync } = useSignMessage();
     const identityToken = useIdentityToken();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -23,20 +24,24 @@ export function useKYC() {
         setError(null);
 
         try {
+            // Sign message to verify wallet ownership
+            const message = `Submit KYC for ${address}`;
+            const signature = await signMessageAsync({ message });
+
             // Create FormData for file upload
             const formData = new FormData();
             formData.append('walletAddress', address);
-            formData.append('verificationType', 'KYC');
+            formData.append('signature', signature);
+            formData.append('kycData', JSON.stringify(kycData));
 
-            // Add KYC fields
-            Object.keys(kycData).forEach(key => {
-                formData.append(key, kycData[key]);
-            });
-
-            // Add files
+            // Add files with specific field names expected by backend
             if (files && files.length > 0) {
+                // Map files to expected field names
+                const fileFields = ['governmentId', 'addressProof', 'selfie'];
                 files.forEach((file, index) => {
-                    formData.append(`documents`, file);
+                    if (index < fileFields.length) {
+                        formData.append(fileFields[index], file);
+                    }
                 });
             }
 
@@ -59,7 +64,7 @@ export function useKYC() {
             setLoading(false);
             throw err;
         }
-    }, [address]);
+    }, [address, signMessageAsync]);
 
     // Check verification status
     const checkStatus = useCallback(async (walletAddress = address) => {

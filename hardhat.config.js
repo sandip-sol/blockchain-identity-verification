@@ -20,7 +20,7 @@ module.exports = {
             url: "http://127.0.0.1:8545"
         },
         hoodi: {
-            url: process.env.HOODI_RPC || "https://hoodi.infura.io/v3/",
+            url: process.env.HOODI_DEPLOY_RPC || "https://hoodi.infura.io/v3/",
             accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
             chainId: 560048
         },
