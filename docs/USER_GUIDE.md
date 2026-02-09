@@ -7,7 +7,8 @@
 4. [Managing Your Identity](#managing-your-identity)
 5. [Verifying Others](#verifying-others)
 6. [Transaction Proofs](#transaction-proofs)
-7. [FAQ](#faq)
+7. [Document Signature (Envelopes)](#document-signature-envelopes)
+8. [FAQ](#faq)
 
 ## Getting Started
 
@@ -191,6 +192,53 @@ When your verification is close to expiry (< 30 days):
 4. Approve revocation transaction
 5. Access immediately removed
 
+## Document Signature (Envelopes)
+
+The Document Signature feature works like DocuSign but with blockchain verification. Create envelopes, add recipients, collect signatures, and anchor everything on-chain.
+
+### Creating an Envelope
+
+1. **Navigate to Envelopes** - Click "Envelopes" in the navigation
+2. **Click "Create New Envelope"** - Enter title and optional description
+3. **Upload Your Document** - Upload a PDF (stored on IPFS, hash generated)
+4. **Add Recipients** - Enter wallet addresses and set signing order
+5. **Send for Signing** - Lock the envelope and enable signing
+
+### Signing an Envelope
+
+1. **Access the Envelope** - Find envelopes awaiting your signature
+2. **Review the Document** - Download and review the PDF
+3. **Sign with Your Wallet** - EIP-712 typed signature (gasless)
+4. **Draw Visual Signature (Optional)** - Image stamped into final PDF
+5. **Submit Signature** - Your signature is recorded
+
+### Completing an Envelope
+
+1. **Owner Anchors to Blockchain** - Submits to `DocumentSignatureRegistry`
+2. **Final PDF Generated** - Visual signatures stamped, uploaded to IPFS
+3. **Status becomes "COMPLETED"**
+
+### Verifying a Signed Document
+
+- ✅ Document exists on blockchain
+- ✅ Hash matches stored document
+- ✅ List of all signers
+- ✅ Timestamp of completion
+- ✅ Anyone can verify using envelope ID
+
+### Envelope Status Flow
+
+| Status | Description |
+|--------|-------------|
+| **DRAFT** | Created, document/recipients can be added |
+| **IN_PROGRESS** | Recipients added, not yet sent |
+| **SENT** | Sent for signing |
+| **COMPLETED** | All signed and anchored |
+| **EXPIRED** | Expired before completion |
+| **CANCELLED** | Owner cancelled |
+
+> **Important**: Once anchored, the document and signatures cannot be modified.
+
 ## FAQ
 
 ### General
@@ -276,9 +324,26 @@ A: Yes! Any wallet compatible with WalletConnect works (Ledger, Trezor, etc.)
 - Ensure correct format (JPG, PNG, PDF)
 - Try compressing the file
 
+### Document Signature
+
+**Q: Is the signature legally binding?**  
+A: The EIP-712 wallet signature provides cryptographic proof of consent. Legal validity depends on your jurisdiction.
+
+**Q: Can I cancel an envelope after sending?**  
+A: Yes, the owner can cancel before all signatures are collected. Once anchored, it cannot be undone.
+
+**Q: What if a recipient refuses to sign?**  
+A: The envelope will remain in "SENT" status. The owner can cancel and create a new envelope with different recipients.
+
+**Q: Is the visual signature required?**  
+A: No. The wallet signature is the legal proof. The visual signature is optional and purely for the PDF appearance.
+
+**Q: Can I verify a document without a wallet?**  
+A: Yes. The blockchain records are public. Anyone can verify using the envelope ID.
+
 ---
 
-**Last Updated**: January 2026  
-**Version**: 1.0.0
+**Last Updated**: February 2026  
+**Version**: 1.1.0
 
 *For technical documentation, see [README.md](../README.md) and [API_DOCS.md](./API_DOCS.md)*

@@ -9,6 +9,7 @@ A decentralized identity verification platform built on blockchain technology, e
 - **Off-Chain Encrypted Storage**: Sensitive PII stored on IPFS with only hashes on-chain
 - **Selective Data Disclosure**: Granular access control with EIP-712 signatures
 - **Transaction Proofs**: Tokenize and verify specific transactions
+- **Document Signature (DocuSign-like)**: Create envelopes, add recipients, and collect wallet-based signatures with blockchain anchoring
 - **Privacy-First Design**: Complete user control over data sharing
 - **Compliance Ready**: Built with AML/CFT, GDPR, and DPDP standards in mind
 
@@ -32,20 +33,22 @@ A decentralized identity verification platform built on blockchain technology, e
 ```
 kyc-kyb-blockchain/
 ├── contracts/              # Smart contracts
-│   ├── IdentityToken.sol         # Soulbound identity NFT
-│   ├── TransactionRegistry.sol   # Transaction proofs
-│   ├── AccessControl.sol         # Data access management
-│   └── test/                     # Contract tests
+│   ├── IdentityToken.sol            # Soulbound identity NFT
+│   ├── TransactionRegistry.sol      # Transaction proofs
+│   ├── AccessControl.sol            # Data access management
+│   ├── DocumentSignatureRegistry.sol # Document signature anchoring
+│   └── test/                        # Contract tests
 ├── scripts/               # Deployment scripts
 ├── backend/               # Backend API
 │   └── src/
-│       ├── routes/              # API endpoints
-│       ├── services/            # Business logic
-│       ├── models/              # Database models
+│       ├── routes/              # API endpoints (incl. envelopes)
+│       ├── services/            # Business logic (IPFS, PDF stamping)
+│       ├── models/              # Database models (Envelope, Recipient)
 │       └── server.js            # Express server
 ├── frontend/              # Frontend application
 │   ├── app/                     # Next.js app router
-│   ├── components/              # Reusable components
+│   │   └── envelopes/           # Document signature pages
+│   ├── components/              # Reusable components (SignaturePad)
 │   ├── context/                 # React context (auth)
 │   └── styles/                  # CSS styles
 └── docs/                  # Documentation
@@ -158,6 +161,16 @@ kyc-kyb-blockchain/
 5. **Connect Wallet**: Link your Web3 wallet for blockchain operations
 6. **Receive Token**: Once verified, receive a Soulbound identity token
 7. **Manage Access**: Control who can view your verification status
+
+### Document Signature (Envelopes)
+
+1. **Create Envelope**: Navigate to /envelopes and create a new signing envelope
+2. **Upload PDF**: Add the document that needs to be signed
+3. **Add Recipients**: Specify wallet addresses of signers with signing order
+4. **Send for Signing**: Lock the envelope and notify recipients
+5. **Recipients Sign**: Signers use EIP-712 typed data signatures (gasless)
+6. **Anchor to Blockchain**: Once all sign, anchor the envelope on-chain
+7. **Verify Anytime**: Anyone can verify document authenticity via blockchain
 
 ### For Verifiers
 
