@@ -57,7 +57,7 @@ router.post('/request', async (req, res) => {
  */
 router.post('/grant', async (req, res) => {
     try {
-        const { accessId, walletAddress, signature } = req.body;
+        const { accessId, walletAddress, signature, onchainTxHash } = req.body;
 
         if (!accessId || !walletAddress || !signature) {
             return res.status(400).json({ error: 'Missing required fields' });
@@ -73,27 +73,88 @@ router.post('/grant', async (req, res) => {
             return res.status(403).json({ error: 'Not authorized' });
         }
 
-        // Verify EIP-712 signature
-        // In production, implement proper EIP-712 typed data signature
-        const message = `Grant access ${accessId} to ${accessLog.requester}`;
-        const isValid = web3Service.verifySignature(message, signature, walletAddress);
+        // Verify EIP-712 typed-data signature (matches DataAccessControl.grantAccess)
+        const domain = await web3Service.getAccessControlDomain();
+        const nonce = await web3Service.getAccessNonce(walletAddress);
+        const expiresAt = Math.floor(new Date(accessLog.expiresAt).getTime() / 1000);
+        const value = {
+            requester: accessLog.requester,
+            tokenIds: accessLog.tokenIds,
+            expiresAt,
+            purpose: accessLog.purpose,
+            nonce
+        };
 
-        if (!isValid) {
-            return res.status(401).json({ error: 'Invalid signature' });
+        const types = {
+            AccessGrant: [
+                { name: 'requester', type: 'address' },
+                { name: 'tokenIds', type: 'uint256[]' },
+                { name: 'expiresAt', type: 'uint256' },
+                { name: 'purpose', type: 'string' },
+                { name: 'nonce', type: 'uint256' }
+            ]
+        };
+
+        const isValid = web3Service.verifyTypedDataSignature(domain, types, value, signature, walletAddress);
+        if (!isValid) return res.status(401).json({ error: 'Invalid EIP-712 signature' });
+
+        // IMPORTANT: The DataAccessControl contract requires msg.sender == dataOwner.
+        // So the on-chain grant must be submitted by the user's wallet.
+        // If the frontend provides an on-chain tx hash, we will confirm it and store the on-chain accessId.
+        let onchainAccessId = null;
+        if (onchainTxHash) {
+            const receipt = await web3Service.getTxReceipt(onchainTxHash);
+            if (!receipt) return res.status(400).json({ error: 'Invalid onchainTxHash (receipt not found)' });
+
+            const eventLog = receipt.logs.find((log) => {
+                try {
+                    const parsed = web3Service.contracts.accessControl.interface.parseLog(log);
+                    return parsed.name === 'AccessGranted';
+                } catch {
+                    return false;
+                }
+            });
+
+            if (!eventLog) {
+                return res.status(400).json({ error: 'AccessGranted event not found in tx receipt' });
+            }
+
+            const parsed = web3Service.contracts.accessControl.interface.parseLog(eventLog);
+            const { accessId: emittedAccessId, dataOwner, requester, tokenIds, expiresAt: emittedExpiresAt, purpose } = parsed.args;
+
+            if (dataOwner.toLowerCase() !== walletAddress.toLowerCase()) {
+                return res.status(400).json({ error: 'On-chain dataOwner mismatch' });
+            }
+            if (requester.toLowerCase() !== accessLog.requester.toLowerCase()) {
+                return res.status(400).json({ error: 'On-chain requester mismatch' });
+            }
+            if (purpose !== accessLog.purpose) {
+                return res.status(400).json({ error: 'On-chain purpose mismatch' });
+            }
+            if (Number(emittedExpiresAt) !== expiresAt) {
+                return res.status(400).json({ error: 'On-chain expiry mismatch' });
+            }
+            // tokenIds compare (string compare for safety)
+            const a = tokenIds.map((x) => x.toString());
+            const b = accessLog.tokenIds.map((x) => x.toString());
+            if (a.length !== b.length || a.some((x, i) => x !== b[i])) {
+                return res.status(400).json({ error: 'On-chain tokenIds mismatch' });
+            }
+
+            onchainAccessId = emittedAccessId;
         }
-
-        // Grant access on blockchain (if using AccessControl contract)
-        // TODO: Call contract's grantAccess function
 
         // Update access log
         accessLog.status = 'GRANTED';
         accessLog.grantedAt = new Date();
+        if (onchainAccessId) accessLog.onchainAccessId = onchainAccessId;
         await accessLog.save();
 
         res.status(200).json({
             success: true,
             message: 'Access granted successfully',
             accessId,
+            onchainAccessId,
             expiresAt: accessLog.expiresAt
         });
     } catch (error) {
@@ -109,7 +170,7 @@ router.post('/grant', async (req, res) => {
  */
 router.post('/revoke', async (req, res) => {
     try {
-        const { accessId, walletAddress, signature } = req.body;
+        const { accessId, walletAddress, signature, onchainTxHash } = req.body;
 
         if (!accessId || !walletAddress || !signature) {
             return res.status(400).json({ error: 'Missing required fields' });
@@ -133,8 +194,41 @@ router.post('/revoke', async (req, res) => {
             return res.status(401).json({ error: 'Invalid signature' });
         }
 
-        // Revoke on blockchain
-        // TODO: Call contract's revokeAccess function
+        // As with grant, revoke must be sent by the data owner's wallet.
+        // If the frontend provides an on-chain tx hash, we will confirm AccessRevoked event.
+        if (onchainTxHash) {
+            const receipt = await web3Service.getTxReceipt(onchainTxHash);
+            if (!receipt) return res.status(400).json({ error: 'Invalid onchainTxHash (receipt not found)' });
+
+            const eventLog = receipt.logs.find((log) => {
+                try {
+                    const parsed = web3Service.contracts.accessControl.interface.parseLog(log);
+                    return parsed.name === 'AccessRevoked';
+                } catch {
+                    return false;
+                }
+            });
+
+            if (!eventLog) {
+                return res.status(400).json({ error: 'AccessRevoked event not found in tx receipt' });
+            }
+
+            const parsed = web3Service.contracts.accessControl.interface.parseLog(eventLog);
+            const { accessId: emittedAccessId, dataOwner, requester } = parsed.args;
+
+            if (dataOwner.toLowerCase() !== walletAddress.toLowerCase()) {
+                return res.status(400).json({ error: 'On-chain dataOwner mismatch' });
+            }
+            if (requester.toLowerCase() !== accessLog.requester.toLowerCase()) {
+                return res.status(400).json({ error: 'On-chain requester mismatch' });
+            }
+
+            // If we have stored onchainAccessId, it should match. If not, store it.
+            if (accessLog.onchainAccessId && accessLog.onchainAccessId !== emittedAccessId) {
+                return res.status(400).json({ error: 'On-chain accessId mismatch' });
+            }
+            accessLog.onchainAccessId = emittedAccessId;
+        }
 
         // Update access log
         accessLog.status = 'REVOKED';
@@ -180,6 +274,46 @@ router.get('/logs/:address', async (req, res) => {
 });
 
 /**
+ * @route   GET /api/access/typed-data/:accessId
+ * @desc    Return EIP-712 typed data payload for DataAccessControl.grantAccess
+ * @access  Public (wallet must sign & send tx themselves)
+ */
+router.get('/typed-data/:accessId', async (req, res) => {
+    try {
+        const { accessId } = req.params;
+        const accessLog = await AccessLog.findOne({ accessId });
+        if (!accessLog) return res.status(404).json({ error: 'Access request not found' });
+
+        const domain = await web3Service.getAccessControlDomain();
+        const nonce = await web3Service.getAccessNonce(accessLog.dataOwner);
+        const expiresAt = Math.floor(new Date(accessLog.expiresAt).getTime() / 1000);
+
+        const types = {
+            AccessGrant: [
+                { name: 'requester', type: 'address' },
+                { name: 'tokenIds', type: 'uint256[]' },
+                { name: 'expiresAt', type: 'uint256' },
+                { name: 'purpose', type: 'string' },
+                { name: 'nonce', type: 'uint256' }
+            ]
+        };
+
+        const value = {
+            requester: accessLog.requester,
+            tokenIds: accessLog.tokenIds,
+            expiresAt,
+            purpose: accessLog.purpose,
+            nonce
+        };
+
+        res.status(200).json({ success: true, domain, types, value });
+    } catch (error) {
+        console.error('Typed data error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
  * @route   POST /api/access/decrypt
  * @desc    Request decryption of data with valid access
  * @access  Authorized requesters
@@ -204,6 +338,25 @@ router.post('/decrypt', async (req, res) => {
 
         if (accessLog.requester !== requester.toLowerCase()) {
             return res.status(403).json({ error: 'Not authorized' });
+        }
+
+        // Enforce on-chain access control when possible.
+        // The on-chain contract tracks grants per-tokenId. We'll allow decrypt only if
+        // requester has access to at least one of the requested tokenIds.
+        try {
+            const checks = await Promise.all(
+                accessLog.tokenIds.map((tokenId) =>
+                    web3Service.hasAccess(accessLog.requester, accessLog.dataOwner, tokenId)
+                )
+            );
+
+            const anyAllowed = checks.some(Boolean);
+            if (!anyAllowed) {
+                return res.status(403).json({ error: 'No valid on-chain access grant found' });
+            }
+        } catch (e) {
+            // If contracts aren't configured (e.g., missing deployment file), fall back to DB checks.
+            console.warn('⚠️ On-chain access check skipped:', e.message);
         }
 
         // Get user data

@@ -73,6 +73,53 @@ class IPFSService {
     }
 
     /**
+     * Upload raw bytes (e.g., PDF / PNG) to IPFS with local fallback.
+     * Returns CID or local id.
+     * @param {Buffer} bytes
+     * @param {string} filename
+     */
+    async uploadRaw(bytes, filename = 'file.bin') {
+        if (!this.isInitialized) {
+            await this.initialize();
+        }
+
+        try {
+            const result = await this.client.add(bytes, { timeout: 10000, pin: true, wrapWithDirectory: false });
+            console.log('📤 Uploaded raw to IPFS:', result.path, filename);
+            return result.path;
+        } catch (error) {
+            console.warn('⚠️ IPFS raw upload failed, falling back to local storage:', error.message);
+            return this.saveLocallyRaw(bytes, filename);
+        }
+    }
+
+    /**
+     * Retrieve raw bytes from IPFS or local.
+     * @param {string} cid
+     * @returns {Buffer}
+     */
+    async retrieveRaw(cid) {
+        if (cid.startsWith('localraw-')) {
+            return this.retrieveLocallyRaw(cid);
+        }
+
+        if (!this.isInitialized) {
+            await this.initialize();
+        }
+
+        try {
+            const chunks = [];
+            for await (const chunk of this.client.cat(cid, { timeout: 10000 })) {
+                chunks.push(chunk);
+            }
+            return Buffer.concat(chunks);
+        } catch (error) {
+            console.warn('⚠️ IPFS raw retrieval failed, checking local:', error.message);
+            return this.retrieveLocallyRaw(cid);
+        }
+    }
+
+    /**
      * Retrieve encrypted data from IPFS (or local fallback)
      * @param {string} cid - IPFS Content Identifier or local ID
      * @returns {Object} - Encrypted data object
@@ -145,6 +192,40 @@ class IPFSService {
         return id;
     }
 
+    saveLocallyRaw(bytes, filename) {
+        const fs = require('fs');
+        const path = require('path');
+        const uploadDir = path.join(__dirname, '../../uploads_raw');
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+
+        const id = 'localraw-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const filePath = path.join(uploadDir, `${id}-${safe}`);
+        fs.writeFileSync(filePath, bytes);
+        console.log('💾 Saved raw locally:', id);
+        return id;
+    }
+
+    retrieveLocallyRaw(idOrPath) {
+        const fs = require('fs');
+        const path = require('path');
+        const uploadDir = path.join(__dirname, '../../uploads_raw');
+
+        // If caller passed just id, search for matching prefix
+        if (idOrPath.startsWith('localraw-')) {
+            if (!fs.existsSync(uploadDir)) throw new Error('Local raw storage not initialized');
+            const files = fs.readdirSync(uploadDir);
+            const match = files.find(f => f.startsWith(idOrPath + '-'));
+            if (!match) throw new Error('Raw document not found locally');
+            return fs.readFileSync(path.join(uploadDir, match));
+        }
+
+        // Otherwise treat as filename
+        return fs.readFileSync(path.join(uploadDir, idOrPath));
+    }
+
     retrieveLocally(id) {
         const fs = require('fs');
         const path = require('path');
@@ -166,6 +247,8 @@ class IPFSService {
             throw new Error('Document not found locally or on IPFS');
         }
     }
+
+    // NOTE: raw local storage helpers are defined above (uploads_raw).
 }
 
 // Export singleton instance

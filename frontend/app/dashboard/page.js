@@ -3,27 +3,30 @@
 import { useEffect, useState } from 'react';
 import { useAccount } from 'wagmi';
 import { useRouter } from 'next/navigation';
-import { Shield, FileCheck, Wallet, AlertCircle, ExternalLink } from 'lucide-react';
+import { Shield, FileCheck, Wallet, AlertCircle, ExternalLink, FileSignature, Activity } from 'lucide-react';
 import Navbar from '../../components/Navbar';
 import Card, { CardHeader, CardContent, CardFooter } from '../../components/Card';
 import StatusBadge from '../../components/StatusBadge';
-import TransactionTable from '../../components/TransactionTable';
+// TransactionTable removed; dashboard now shows consolidated activity feed (tx hashes + signing proofs)
 import { useKYC } from '../../hooks/useKYC';
+import { useAPI } from '../../hooks/useAPI';
 
 export default function Dashboard() {
     const { address, isConnected } = useAccount();
     const router = useRouter();
     const { getIdentityToken, checkStatus, isVerified } = useKYC();
+    const api = useAPI();
 
     const [identityToken, setIdentityToken] = useState(null);
     const [userStatus, setUserStatus] = useState(null);
     const [verified, setVerified] = useState(false);
     const [loading, setLoading] = useState(true);
-    const [transactions, setTransactions] = useState([]);
+    const [activities, setActivities] = useState([]);
+    const [txProofCount, setTxProofCount] = useState(0);
 
     useEffect(() => {
         if (!isConnected) {
-            router.push('/');
+            setLoading(false);
             return;
         }
 
@@ -34,21 +37,30 @@ export default function Dashboard() {
         setLoading(true);
 
         try {
-            // Load identity token from blockchain
-            const token = await getIdentityToken();
+            // Parallelize all API calls for faster loading
+            const [token, status, isVerifiedOnChain] = await Promise.all([
+                getIdentityToken(),
+                checkStatus(),
+                isVerified()
+            ]);
+
             setIdentityToken(token);
-
-            // Load status from backend
-            const status = await checkStatus();
             setUserStatus(status);
-
-            // Check verification status on-chain
-            const isVerifiedOnChain = await isVerified();
             setVerified(isVerifiedOnChain);
 
-            // Load mock transactions (replace with actual API call)
-            if (status?.transactions) {
-                setTransactions(status.transactions);
+            // Load activity and transaction count in parallel
+            if (address) {
+                const [activityResp, histResp] = await Promise.allSettled([
+                    api.get(`/api/activity/${address}`),
+                    api.get(`/api/transaction/history/${address}`)
+                ]);
+
+                if (activityResp.status === 'fulfilled') {
+                    setActivities((activityResp.value.activities || []).slice(0, 8));
+                }
+                if (histResp.status === 'fulfilled') {
+                    setTxProofCount(Array.isArray(histResp.value.transactions) ? histResp.value.transactions.length : 0);
+                }
             }
         } catch (error) {
             console.error('Error loading dashboard data:', error);
@@ -56,6 +68,32 @@ export default function Dashboard() {
             setLoading(false);
         }
     };
+
+    if (!isConnected) {
+        return (
+            <div className="min-h-screen">
+                <Navbar />
+                <div className="max-w-3xl mx-auto px-4 py-20">
+                    <Card>
+                        <CardHeader title="Connect your wallet" icon={<Wallet className="w-6 h-6" />} />
+                        <CardContent>
+                            <p className="text-gray-300">
+                                You’re logged in. Now connect a wallet to use blockchain features like KYC minting, transaction proofs, and document signing.
+                            </p>
+                            <div className="mt-6">
+                                <div className="glass-card inline-block p-4">
+                                    <p className="text-gray-400 text-sm mb-2">Wallet</p>
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-gray-200 text-sm">Not connected</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
+        );
+    }
 
     const formatDate = (date) => {
         return new Date(date).toLocaleDateString('en-US', {
@@ -70,10 +108,6 @@ export default function Dashboard() {
         const days = Math.ceil((identityToken.expiryDate - new Date()) / (1000 * 60 * 60 * 24));
         return days;
     };
-
-    if (!isConnected) {
-        return null;
-    }
 
     return (
         <div className="min-h-screen">
@@ -158,14 +192,32 @@ export default function Dashboard() {
                                 </CardContent>
                             </Card>
 
-                            {/* Recent Transactions */}
+                            {/* Recent Activity */}
                             <Card>
                                 <CardHeader
-                                    title="Recent Transactions"
-                                    subtitle="Your blockchain activity"
+                                    title="Recent Activity"
+                                    subtitle="Tx hashes, envelope anchors, and signing proofs"
                                 />
-                                <CardContent className="p-0">
-                                    <TransactionTable transactions={transactions} />
+                                <CardContent>
+                                    {activities.length === 0 ? (
+                                        <div className="text-gray-400">No activity yet. Try submitting KYC or creating an envelope.</div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {activities.map((a, idx) => (
+                                                <div key={idx} className="rounded-lg border border-white/10 bg-white/5 p-4">
+                                                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                                                        <p className="text-sm font-medium text-gray-200">{a.type}</p>
+                                                        <p className="text-xs text-gray-400">{a.timestamp ? new Date(a.timestamp).toLocaleString() : ''}</p>
+                                                    </div>
+                                                    {a.txHash && <p className="text-xs text-gray-400 mt-1 break-all">Tx: <span className="font-mono text-gray-200">{a.txHash}</span></p>}
+                                                    {a.envelopeId && <p className="text-xs text-gray-400 mt-1 break-all">Envelope: <span className="font-mono text-gray-200">{a.envelopeId}</span></p>}
+                                                    {a.payloadHash && <p className="text-xs text-gray-400 mt-1 break-all">Payload Hash: <span className="font-mono text-gray-200">{a.payloadHash}</span></p>}
+                                                    {a.identityTokenId && <p className="text-xs text-gray-400 mt-1">DID: <span className="font-mono text-gray-200">{a.identityTokenId}</span></p>}
+                                                </div>
+                                            ))}
+                                            <button onClick={() => router.push('/activity')} className="secondary-button w-full">View full activity</button>
+                                        </div>
+                                    )}
                                 </CardContent>
                             </Card>
                         </div>
@@ -194,10 +246,34 @@ export default function Dashboard() {
                                             className="w-full flex items-center gap-3 p-4 bg-white/5 hover:bg-white/10 
                                                      border border-white/10 rounded-lg transition-all group"
                                         >
-                                            <Wallet className="w-5 h-5 text-gray-400 group-hover:scale-110 transition-transform" />
+                                            <Activity className="w-5 h-5 text-gray-400 group-hover:scale-110 transition-transform" />
                                             <div className="text-left">
                                                 <p className="font-medium">Transaction Proofs</p>
                                                 <p className="text-xs text-gray-400">Manage proofs</p>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            onClick={() => router.push('/envelopes')}
+                                            className="w-full flex items-center gap-3 p-4 bg-white/5 hover:bg-white/10 
+                                                     border border-white/10 rounded-lg transition-all group"
+                                        >
+                                            <FileSignature className="w-5 h-5 text-gray-400 group-hover:scale-110 transition-transform" />
+                                            <div className="text-left">
+                                                <p className="font-medium">Document Signing</p>
+                                                <p className="text-xs text-gray-400">Create and track envelopes</p>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            onClick={() => router.push('/activity')}
+                                            className="w-full flex items-center gap-3 p-4 bg-white/5 hover:bg-white/10 
+                                                     border border-white/10 rounded-lg transition-all group"
+                                        >
+                                            <Activity className="w-5 h-5 text-gray-400 group-hover:scale-110 transition-transform" />
+                                            <div className="text-left">
+                                                <p className="font-medium">Activity</p>
+                                                <p className="text-xs text-gray-400">View tx hashes and proofs</p>
                                             </div>
                                         </button>
 
@@ -230,7 +306,7 @@ export default function Dashboard() {
                                         <div>
                                             <p className="text-sm text-gray-400 mb-1">Transaction Proofs</p>
                                             <p className="text-2xl font-bold text-gradient">
-                                                {transactions.length}
+                                                {txProofCount}
                                             </p>
                                         </div>
                                         <div>

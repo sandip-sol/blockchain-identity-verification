@@ -22,6 +22,12 @@ const accessLogSchema = new mongoose.Schema({
     tokenIds: [{
         type: String
     }],
+    // Optional: bytes32 accessId emitted by DataAccessControl (on-chain)
+    onchainAccessId: {
+        type: String,
+        default: null,
+        index: true
+    },
     purpose: {
         type: String,
         required: true

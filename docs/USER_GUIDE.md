@@ -15,30 +15,33 @@
 
 Before using the platform, ensure you have:
 
-1. **Web3 Wallet**: MetaMask, Rainbow, or any compatible Ethereum wallet
-2. **Cryptocurrency**: Small amount of MATIC (for Mumbai testnet) or ETH for gas fees
-3. **Documents**: Government-issued ID, proof of address (for KYC/KYB)
-4. **Email Address**: For notifications and communication
+1. **Email Address**: For account registration and login
+2. **Web3 Wallet**: MetaMask, Rainbow, or any compatible Ethereum wallet (for blockchain operations)
+3. **Cryptocurrency**: Small amount of MATIC (for Mumbai testnet) or ETH for gas fees
+4. **Documents**: Government-issued ID, proof of address (for KYC/KYB)
 
 ### First-Time Setup
 
 1. Visit the platform at `http://localhost:3000` (or production URL)
-2. Install MetaMask if you don't have a wallet ([metamask.io](https://metamask.io))
-3. Create a new wallet or import existing one
-4. Add the network (Mumbai testnet or Polygon mainnet)
+2. Click **"Sign Up"** to create an account
+3. Enter your email address and create a password
+4. You will be redirected to your dashboard
+5. Install MetaMask if you don't have a wallet ([metamask.io](https://metamask.io))
 
 ## Connecting Your Wallet
 
+After signing in with email, you can link your Web3 wallet for blockchain operations:
+
 ### Step-by-Step
 
-1. **Click "Connect Wallet"** button in the top navigation
-2. **Select Your Wallet** from the options (MetaMask, WalletConnect, etc.)
-3. **Approve Connection** in your wallet popup
-4. **Confirm Network** - switch to the correct network if prompted
+1. **Sign in** to your account with email and password
+2. Navigate to your **Dashboard** or **Settings**
+3. **Click "Connect Wallet"** button
+4. **Select Your Wallet** from the options (MetaMask, WalletConnect, etc.)
+5. **Sign the message** to verify wallet ownership (no gas fees)
+6. **Wallet linked** - you can now perform blockchain operations
 
-![wallet_connection](Example: Click connect → Select MetaMask → Approve → Connected!)
-
-> **Note**: Your wallet address is your identity. Make sure you're using the correct account.
+> **Note**: Your wallet is used for blockchain operations. Your email is used for login.
 
 ## Submitting KYC Verification
 
@@ -195,11 +198,17 @@ When your verification is close to expiry (< 30 days):
 **Q: Is my data safe?**  
 A: Yes. All personal information is encrypted before storage. Only cryptographic hashes go on the blockchain.
 
+**Q: How do I sign up?**  
+A: Click "Sign Up" on the login page, enter your email and password. It's that simple!
+
 **Q: Can I transfer my identity token?**  
 A: No. Identity tokens are "Soulbound" - permanently attached to your wallet address.
 
 **Q: What happens if I lose access to my wallet?**  
-A: Your identity token is tied to your wallet. If you lose the wallet, you'll need to verify again with a new wallet.
+A: Your account is tied to your email. You can link a new wallet after logging in.
+
+**Q: What happens if I forget my password?**  
+A: Contact support to reset your password (password reset feature coming soon).
 
 **Q: How much does verification cost?**  
 A: Only gas fees for blockchain transactions. The verification service itself has no fee in this POC.

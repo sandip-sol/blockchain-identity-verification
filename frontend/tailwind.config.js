@@ -19,6 +19,7 @@ module.exports = {
                     700: '#0369a1',
                     800: '#075985',
                     900: '#0c4a6e',
+                    950: '#082f49',
                 },
                 secondary: {
                     50: '#fdf4ff',
@@ -31,6 +32,7 @@ module.exports = {
                     700: '#a21caf',
                     800: '#86198f',
                     900: '#701a75',
+                    950: '#4a044e',
                 },
                 border: 'hsl(var(--border))',
                 input: 'hsl(var(--input))',
@@ -42,6 +44,7 @@ module.exports = {
                 'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
                 'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
                 'glass-gradient': 'linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05))',
+                'glow-conic': 'conic-gradient(from 180deg at 50% 50%, #2a8af6 0deg, #a853ba 180deg, #e92a67 360deg)',
             },
             backdropBlur: {
                 xs: '2px',
@@ -50,6 +53,9 @@ module.exports = {
                 'fade-in': 'fadeIn 0.5s ease-in',
                 'slide-up': 'slideUp 0.5s ease-out',
                 'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                'float': 'float 6s ease-in-out infinite',
+                'glow': 'glow 2s ease-in-out infinite alternate',
+                'shimmer': 'shimmer 2s linear infinite',
             },
             keyframes: {
                 fadeIn: {
@@ -59,6 +65,18 @@ module.exports = {
                 slideUp: {
                     '0%': { transform: 'translateY(20px)', opacity: '0' },
                     '100%': { transform: 'translateY(0)', opacity: '1' },
+                },
+                float: {
+                    '0%, 100%': { transform: 'translateY(0)' },
+                    '50%': { transform: 'translateY(-20px)' },
+                },
+                glow: {
+                    '0%': { boxShadow: '0 0 5px rgba(14, 165, 233, 0.2), 0 0 10px rgba(14, 165, 233, 0.2)' },
+                    '100%': { boxShadow: '0 0 20px rgba(14, 165, 233, 0.6), 0 0 30px rgba(217, 70, 239, 0.6)' },
+                },
+                shimmer: {
+                    '0%': { backgroundPosition: '-200% 0' },
+                    '100%': { backgroundPosition: '200% 0' },
                 }
             }
         },

@@ -65,7 +65,9 @@ router.post('/tokenize', upload.single('document'), async (req, res) => {
                 tokenId: result.tokenId || 'pending',
                 txHash,
                 txType,
-                timestamp: new Date()
+                timestamp: new Date(),
+                blockchainTxHash: result.txHash || null,
+                blockNumber: result.blockNumber || null
             });
             await user.save();
         }
@@ -131,14 +133,33 @@ router.post('/batch-tokenize', async (req, res) => {
             results.push({ txHash, ipfsCID });
         }
 
-        // Batch register on blockchain (would need batch function in contract)
-        // For now, register individually
-        // TODO: Implement batch registration in smart contract
+        // Batch register on blockchain (supported by TransactionRegistry)
+        const onchain = await web3Service.batchRegisterTransactions(txHashes, txTypes, metadataHashes);
+
+        // Save to user record (best-effort)
+        const user = await User.findOne({ walletAddress: walletAddress.toLowerCase() });
+        if (user) {
+            const tokenIds = Array.isArray(onchain.tokenIds) ? onchain.tokenIds : [];
+            results.forEach((r, idx) => {
+                user.transactionTokens.push({
+                    tokenId: tokenIds[idx] ? String(tokenIds[idx]) : 'pending',
+                    txHash: r.txHash,
+                    txType: transactions[idx]?.type,
+                    timestamp: new Date(),
+                    blockchainTxHash: onchain.txHash || null,
+                    blockNumber: onchain.blockNumber || null
+                });
+            });
+            await user.save();
+        }
 
         res.status(200).json({
             success: true,
             message: `${transactions.length} transactions processed`,
-            results
+            results,
+            blockchainTxHash: onchain.txHash,
+            tokenIds: onchain.tokenIds || [],
+            blockNumber: onchain.blockNumber
         });
     } catch (error) {
         console.error('Batch tokenization error:', error);
@@ -160,14 +181,15 @@ router.post('/verify', async (req, res) => {
         }
 
         // Verify on blockchain
-        const txRegistry = await web3Service.contracts.transactionRegistry;
+        const txRegistry = web3Service.contracts.transactionRegistry;
         const result = await txRegistry.verifyTransaction(txHash);
 
-        res.status(200).json({
-            exists: result.exists,
-            tokenId: result.tokenId.toString(),
-            isValid: result.isValid
-        });
+        // ethers v6 returns a Result (array-like). Solidity returns (bool exists, uint256 tokenId, bool isValid).
+        const exists = Boolean(result[0]);
+        const tokenId = result[1] ? result[1].toString() : '0';
+        const isValid = Boolean(result[2]);
+
+        res.status(200).json({ exists, tokenId, isValid });
     } catch (error) {
         console.error('Transaction verification error:', error);
         res.status(500).json({ error: error.message });

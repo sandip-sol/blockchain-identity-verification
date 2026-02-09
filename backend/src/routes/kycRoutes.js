@@ -117,6 +117,19 @@ router.post('/submit', upload.fields([
  */
 router.post('/verify', async (req, res) => {
     try {
+        // Simple server-side protection:
+        // 1) Require an API key header
+        // 2) Ensure server signer actually has VERIFIER_ROLE on IdentityToken
+        const apiKey = req.get('x-admin-key') || req.get('authorization')?.replace(/^Bearer\s+/i, '');
+        if (!process.env.VERIFIER_API_KEY || apiKey !== process.env.VERIFIER_API_KEY) {
+            return res.status(401).json({ error: 'Unauthorized (missing/invalid verifier key)' });
+        }
+
+        const isVerifierSigner = await web3Service.isSignerVerifier();
+        if (!isVerifierSigner) {
+            return res.status(403).json({ error: 'Server signer does not have VERIFIER_ROLE' });
+        }
+
         const { walletAddress, expiryYears = 2 } = req.body;
 
         const user = await User.findOne({ walletAddress: walletAddress.toLowerCase() });
@@ -146,6 +159,8 @@ router.post('/verify', async (req, res) => {
         user.verifiedAt = new Date();
         user.expiryDate = new Date(expiryDate * 1000);
         user.verifier = (await web3Service.signer.getAddress());
+        user.mintTxHash = result.txHash || null;
+        user.mintBlockNumber = result.blockNumber || null;
 
         await user.save();
 

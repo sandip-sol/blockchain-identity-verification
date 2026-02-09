@@ -10,6 +10,9 @@ require('dotenv').config();
 const kycRoutes = require('./routes/kycRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
 const accessRoutes = require('./routes/accessRoutes');
+const envelopeRoutes = require('./routes/envelopeRoutes');
+const activityRoutes = require('./routes/activityRoutes');
+const authRoutes = require('./routes/authRoutes');
 const web3Service = require('./services/web3Service');
 const ipfsService = require('./services/ipfsService');
 
@@ -50,7 +53,21 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/kyc-kyb-p
     useNewUrlParser: true,
     useUnifiedTopology: true
 })
-    .then(() => console.log('✅ MongoDB connected'))
+    .then(async () => {
+        console.log('✅ MongoDB connected');
+
+        // Migration: drop old unique index on 'address' field if it exists
+        // This is needed because we changed from wallet-first auth to email-first auth
+        try {
+            await mongoose.connection.collection('accounts').dropIndex('address_1');
+            console.log('✅ Dropped old address_1 unique index');
+        } catch (e) {
+            // Index might not exist, which is fine
+            if (!e.message.includes('index not found')) {
+                console.log('⚠️ Note:', e.message);
+            }
+        }
+    })
     .catch(err => console.error('❌ MongoDB connection error:', err));
 
 // Initialize services
@@ -75,8 +92,11 @@ initializeServices();
 
 // API Routes
 app.use('/api/kyc', kycRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/transaction', transactionRoutes);
 app.use('/api/access', accessRoutes);
+app.use('/api/envelopes', envelopeRoutes);
+app.use('/api/activity', activityRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -100,6 +120,7 @@ app.get('/', (req, res) => {
             kyc: '/api/kyc',
             transactions: '/api/transaction',
             access: '/api/access',
+            envelopes: '/api/envelopes',
             health: '/health'
         }
     });

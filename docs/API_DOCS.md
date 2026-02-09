@@ -10,6 +10,123 @@ Most endpoints require a valid JWT token in the Authorization header:
 Authorization: Bearer <token>
 ```
 
+### Email Authentication
+
+#### POST `/api/auth/register`
+
+Register a new account with email and password.
+
+**Body:**
+```json
+{
+  "email": "user@example.com",
+  "password": "yourpassword",
+  "name": "John Doe"
+}
+```
+
+**Success Response (201):**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "account": {
+    "_id": "507f1f77bcf86cd799439011",
+    "email": "user@example.com",
+    "name": "John Doe",
+    "createdAt": "2026-01-15T09:00:00.000Z"
+  }
+}
+```
+
+**Error Responses:**
+- `400` - Email and password are required / Password must be at least 6 characters
+- `409` - An account with this email already exists
+
+---
+
+#### POST `/api/auth/login`
+
+Authenticate with email and password.
+
+**Body:**
+```json
+{
+  "email": "user@example.com",
+  "password": "yourpassword"
+}
+```
+
+**Success Response:**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "account": {
+    "_id": "507f1f77bcf86cd799439011",
+    "email": "user@example.com",
+    "name": "John Doe",
+    "address": "0x1234...",
+    "createdAt": "2026-01-15T09:00:00.000Z"
+  }
+}
+```
+
+**Error Responses:**
+- `400` - Email and password are required
+- `401` - Invalid email or password
+
+---
+
+### Wallet Linking
+
+#### GET `/api/auth/nonce?address=0x...`
+
+Get a nonce for wallet signature verification.
+
+**Response:**
+```json
+{
+  "address": "0x1234...",
+  "nonce": "abc123...",
+  "expiresAt": "2026-01-15T09:05:00.000Z",
+  "message": "Login to KYC/KYB Platform\nAddress: 0x1234...\nNonce: abc123..."
+}
+```
+
+---
+
+#### POST `/api/auth/link-wallet`
+
+Link a wallet address to your account. Requires authentication.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Body:**
+```json
+{
+  "address": "0x1234...",
+  "nonce": "abc123...",
+  "signature": "0xsignature..."
+}
+```
+
+**Success Response:**
+```json
+{
+  "success": true,
+  "address": "0x1234...",
+  "account": {
+    "_id": "507f1f77bcf86cd799439011",
+    "email": "user@example.com",
+    "address": "0x1234..."
+  }
+}
+```
+
+---
+
 ## Endpoints
 
 ### Health Check
