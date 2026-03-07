@@ -7,6 +7,18 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
+// ── Production startup validation ──────────────────────────────────
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const REQUIRED_ENV_VARS = ['JWT_SECRET', 'MASTER_ENCRYPTION_KEY', 'MONGODB_URI'];
+
+if (IS_PRODUCTION) {
+    const missing = REQUIRED_ENV_VARS.filter(v => !process.env[v]);
+    if (missing.length > 0) {
+        console.error(`❌ FATAL: Missing required environment variables: ${missing.join(', ')}`);
+        process.exit(1);
+    }
+}
+
 const kycRoutes = require('./routes/kycRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
 const accessRoutes = require('./routes/accessRoutes');
@@ -37,6 +49,14 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
+// Stricter rate limiting for auth endpoints (brute-force protection)
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 20, // 20 auth attempts per window
+    message: { error: 'Too many authentication attempts. Please try again later.' }
+});
+app.use('/api/auth/', authLimiter);
+
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -49,10 +69,7 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // Database connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/kyc-kyb-platform', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-})
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/kyc-kyb-platform')
     .then(async () => {
         console.log('✅ MongoDB connected');
 

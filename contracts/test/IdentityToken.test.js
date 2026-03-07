@@ -120,7 +120,7 @@ describe("IdentityToken", function () {
 
             await expect(
                 identityToken.connect(user1).transferFrom(user1.address, user2.address, tokenId)
-            ).to.be.revertedWith("Soulbound: Transfer not allowed");
+            ).to.be.revertedWithCustomError(identityToken, "ERC721InvalidSender");
         });
 
         it("Should prevent approvals", async function () {

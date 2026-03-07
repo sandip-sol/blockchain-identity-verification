@@ -2,13 +2,37 @@ const express = require('express');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { ethers } = require('ethers');
+const Joi = require('joi');
 
 const Account = require('../models/Account');
 const LoginNonce = require('../models/LoginNonce');
+const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
+// Validation schemas
+const registerSchema = Joi.object({
+  email: Joi.string().email().required().messages({
+    'string.email': 'Please provide a valid email address',
+    'any.required': 'Email is required'
+  }),
+  password: Joi.string().min(8).required().messages({
+    'string.min': 'Password must be at least 8 characters',
+    'any.required': 'Password is required'
+  }),
+  name: Joi.string().trim().max(100).optional()
+});
+
+const loginSchema = Joi.object({
+  email: Joi.string().email().required(),
+  password: Joi.string().required()
+});
+
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('❌ FATAL: JWT_SECRET environment variable is required');
+  process.exit(1);
+}
 
 function normalizeAddress(addr) {
   try {
@@ -31,15 +55,12 @@ function buildLoginMessage(address, nonce) {
  */
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, name } = req.body || {};
-
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+    const { error, value } = registerSchema.validate(req.body, { abortEarly: false });
+    if (error) {
+      return res.status(400).json({ error: error.details.map(d => d.message).join(', ') });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
-    }
+    const { email, password, name } = value;
 
     // Check if email already exists
     const existing = await Account.findOne({ email: email.toLowerCase() });
@@ -85,11 +106,12 @@ router.post('/register', async (req, res) => {
  */
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body || {};
-
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+    const { error, value } = loginSchema.validate(req.body, { abortEarly: false });
+    if (error) {
+      return res.status(400).json({ error: error.details.map(d => d.message).join(', ') });
     }
+
+    const { email, password } = value;
 
     // Find account with password field included
     const account = await Account.findOne({ email: email.toLowerCase() }).select('+password');
@@ -156,22 +178,8 @@ router.get('/nonce', async (req, res) => {
  * Links a wallet address to the authenticated account.
  * Requires JWT token in Authorization header.
  */
-router.post('/link-wallet', async (req, res) => {
+router.post('/link-wallet', authMiddleware, async (req, res) => {
   try {
-    // Get token from header
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    const token = authHeader.split(' ')[1];
-    let decoded;
-    try {
-      decoded = jwt.verify(token, JWT_SECRET);
-    } catch {
-      return res.status(401).json({ error: 'Invalid token' });
-    }
-
     const addr = normalizeAddress(req.body.address);
     const { nonce, signature } = req.body || {};
 
@@ -203,7 +211,7 @@ router.post('/link-wallet', async (req, res) => {
 
     // Link wallet to account
     const account = await Account.findByIdAndUpdate(
-      decoded.sub,
+      req.user.sub,
       { $set: { address: addr } },
       { new: true }
     );

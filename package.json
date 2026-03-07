@@ -6,11 +6,21 @@
   "scripts": {
     "test": "hardhat test",
     "compile": "hardhat compile",
-    "deploy:mumbai": "hardhat run scripts/deploy.js --network mumbai",
+    "deploy:hoodi": "hardhat run scripts/deploy.js --network hoodi",
+    "deploy:polygon": "hardhat run scripts/deploy.js --network polygon",
     "deploy:localhost": "hardhat run scripts/deploy.js --network localhost",
     "node": "hardhat node"
   },
-  "keywords": ["blockchain", "kyc", "kyb", "identity", "web3"],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "blockchain",
+    "kyc",
+    "kyb",
+    "identity",
+    "web3"
+  ],
   "author": "",
   "license": "MIT",
   "devDependencies": {

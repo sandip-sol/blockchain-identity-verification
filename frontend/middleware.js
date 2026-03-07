@@ -1,8 +1,15 @@
 import { NextResponse } from 'next/server';
+import { jwtVerify } from 'jose';
 
 const PUBLIC_PATHS = ['/', '/login'];
 
-export function middleware(req) {
+// JWT_SECRET must match the backend secret. In production, use a shared secret
+// or switch to asymmetric keys (RS256) for proper separation.
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || 'dev-secret-change-me'
+);
+
+export async function middleware(req) {
   const { pathname } = req.nextUrl;
 
   // Allow next internals and static
@@ -27,7 +34,19 @@ export function middleware(req) {
     return NextResponse.redirect(url);
   }
 
-  return NextResponse.next();
+  // Validate the JWT signature and expiry
+  try {
+    await jwtVerify(token, JWT_SECRET);
+    return NextResponse.next();
+  } catch {
+    // Token is invalid or expired — clear the cookie and redirect
+    const url = req.nextUrl.clone();
+    url.pathname = '/login';
+    url.searchParams.set('next', pathname);
+    const response = NextResponse.redirect(url);
+    response.cookies.delete('kyc_token');
+    return response;
+  }
 }
 
 export const config = {

@@ -224,26 +224,41 @@ kyc-kyb-blockchain/
 
 ## 🌐 Deployment
 
-### Polygon Mumbai Testnet
+### Hoodi Testnet
 
-1. **Get MATIC**: Obtain test MATIC from [Mumbai Faucet](https://faucet.polygon.technology/)
+1. **Get test ETH**: Obtain test ETH from the Hoodi testnet faucet
 
 2. **Configure credentials**
    ```bash
    # In .env
-   POLYGON_MUMBAI_RPC=https://rpc-mumbai.maticvigil.com
+   HOODI_RPC=https://hoodi.infura.io/v3/your_api_key
    PRIVATE_KEY=your_private_key
-   POLYGONSCAN_API_KEY=your_api_key
+   HOODI_API_KEY=your_api_key
    ```
 
 3. **Deploy**
    ```bash
-   npm run deploy:mumbai
+   npm run deploy:hoodi
    ```
 
 4. **Verify contracts**
    ```bash
-   npx hardhat verify --network mumbai <contract_address>
+   npx hardhat verify --network hoodi <contract_address>
+   ```
+
+### Polygon Mainnet
+
+1. **Configure credentials**
+   ```bash
+   # In .env
+   POLYGON_RPC=https://polygon-rpc.com
+   PRIVATE_KEY=your_private_key
+   POLYGONSCAN_API_KEY=your_api_key
+   ```
+
+2. **Deploy**
+   ```bash
+   npm run deploy:polygon
    ```
 
 ## 📚 Additional Documentation
@@ -259,15 +274,15 @@ Contributions are welcome! Please read our contributing guidelines and submit pu
 
 This project is licensed under the MIT License.
 
-## ⚠️ Disclaimer
+## ⚠️ Important Notes
 
-This is a Proof of Concept (POC) for educational and demonstration purposes. Before using in production:
+Before deploying to production:
 
-- Conduct thorough security audits
-- Implement additional compliance measures
+- Ensure all environment variables are properly configured with strong, unique secrets
+- Conduct smart contract security audits
 - Review data protection regulations in your jurisdiction
-- Perform penetration testing
-- Set up proper key management
+- Set up proper key management (e.g., hardware wallets, key vaults)
+- Configure TLS/SSL termination via a reverse proxy
 
 ## 🙋 Support
 

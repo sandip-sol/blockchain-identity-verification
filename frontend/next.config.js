@@ -12,7 +12,10 @@ const nextConfig = {
         return config;
     },
     images: {
-        domains: ['ipfs.io', 'ipfs.infura.io'],
+        remotePatterns: [
+            { protocol: 'https', hostname: 'ipfs.io', pathname: '/**' },
+            { protocol: 'https', hostname: 'ipfs.infura.io', pathname: '/**' },
+        ],
     },
     env: {
         NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
