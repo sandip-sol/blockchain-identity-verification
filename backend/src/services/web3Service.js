@@ -1,3 +1,4 @@
+const logger = require('./logger');
 const { ethers } = require('ethers');
 const fs = require('fs');
 const path = require('path');
@@ -29,16 +30,16 @@ class Web3Service {
             // Setup signer if private key available
             if (process.env.PRIVATE_KEY) {
                 this.signer = new ethers.Wallet(process.env.PRIVATE_KEY, this.provider);
-                console.log('✅ Signer initialized:', this.signer.address);
+                logger.info('✅ Signer initialized:', this.signer.address);
             }
 
             // Load contract ABIs and addresses
             await this.loadContracts();
 
             this.isInitialized = true;
-            console.log('✅ Web3 service initialized');
+            logger.info('✅ Web3 service initialized');
         } catch (error) {
-            console.error('❌ Web3 initialization failed:', error.message);
+            logger.error('❌ Web3 initialization failed:', error.message);
             throw new Error(`Web3 initialization failed: ${error.message}`);
         }
     }
@@ -61,6 +62,12 @@ class Web3Service {
                 const identityTokenABI = this.loadABI('IdentityToken');
                 const transactionRegistryABI = this.loadABI('TransactionRegistry');
                 const accessControlABI = this.loadABI('DataAccessControl');
+                let documentRegistryABI;
+                try {
+                    documentRegistryABI = this.loadABI('DocumentSignatureRegistry');
+                } catch (e) {
+                    documentRegistryABI = null;
+                }
 
                 // Create contract instances
                 this.contracts.identityToken = new ethers.Contract(
@@ -81,12 +88,22 @@ class Web3Service {
                     this.signer || this.provider
                 );
 
-                console.log('✅ Contracts loaded successfully');
+                // Optional DocuSign-like registry
+                const regAddr = process.env.DOCUSIGN_REGISTRY_ADDRESS || deployment.contracts.DocumentSignatureRegistry;
+                if (documentRegistryABI && regAddr) {
+                    this.contracts.documentRegistry = new ethers.Contract(
+                        regAddr,
+                        documentRegistryABI,
+                        this.signer || this.provider
+                    );
+                }
+
+                logger.info('✅ Contracts loaded successfully');
             } else {
-                console.warn('⚠️  No deployment file found. Contracts not loaded.');
+                logger.warn('⚠️  No deployment file found. Contracts not loaded.');
             }
         } catch (error) {
-            console.error('Contract loading error:', error.message);
+            logger.error('Contract loading error:', error.message);
         }
     }
 
@@ -94,12 +111,30 @@ class Web3Service {
      * Load contract ABI from artifacts
      */
     loadABI(contractName) {
-        const artifactPath = path.join(
-            __dirname,
-            `../../../artifacts/contracts/${contractName}.sol/${contractName}.json`
-        );
-        const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
-        return artifact.abi;
+        // Hardhat artifacts are stored under artifacts/contracts/<SourceFile>.sol/<ContractName>.json.
+        // Some contracts in this repo have different source filenames (e.g., AccessControl.sol -> DataAccessControl).
+        // So we search for the correct artifact path by contract name.
+        const contractsDir = path.join(__dirname, '../../../artifacts/contracts');
+
+        // Fast path: expected convention
+        const conventional = path.join(contractsDir, `${contractName}.sol`, `${contractName}.json`);
+        if (fs.existsSync(conventional)) {
+            const artifact = JSON.parse(fs.readFileSync(conventional, 'utf8'));
+            return artifact.abi;
+        }
+
+        // Search path: look for any <ContractName>.json under artifacts/contracts/**
+        const entries = fs.readdirSync(contractsDir, { withFileTypes: true });
+        for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+            const candidate = path.join(contractsDir, entry.name, `${contractName}.json`);
+            if (fs.existsSync(candidate)) {
+                const artifact = JSON.parse(fs.readFileSync(candidate, 'utf8'));
+                return artifact.abi;
+            }
+        }
+
+        throw new Error(`ABI for ${contractName} not found under artifacts/contracts`);
     }
 
     /**
@@ -117,7 +152,7 @@ class Web3Service {
             );
 
             const receipt = await tx.wait();
-            console.log('✅ Identity token minted:', receipt.hash);
+            logger.info('✅ Identity token minted:', receipt.hash);
 
             // Extract token ID from event
             const event = receipt.logs.find(log => {
@@ -158,15 +193,134 @@ class Web3Service {
             );
 
             const receipt = await tx.wait();
-            console.log('✅ Transaction registered:', receipt.hash);
+            logger.info('✅ Transaction registered:', receipt.hash);
 
-            return {
-                txHash: receipt.hash,
-                blockNumber: receipt.blockNumber
-            };
+            // Extract token ID from TransactionRegistered event
+            const eventLog = receipt.logs.find((log) => {
+                try {
+                    const parsed = this.contracts.transactionRegistry.interface.parseLog(log);
+                    return parsed.name === 'TransactionRegistered';
+                } catch {
+                    return false;
+                }
+            });
+
+            if (eventLog) {
+                const parsed = this.contracts.transactionRegistry.interface.parseLog(eventLog);
+                return {
+                    txHash: receipt.hash,
+                    tokenId: parsed.args.tokenId.toString(),
+                    blockNumber: receipt.blockNumber
+                };
+            }
+
+            return { txHash: receipt.hash, blockNumber: receipt.blockNumber };
         } catch (error) {
             throw new Error(`Transaction registration failed: ${error.message}`);
         }
+    }
+
+    /**
+     * Batch register transactions on-chain
+     */
+    async batchRegisterTransactions(txHashes, txTypes, metadataHashes) {
+        if (!this.isInitialized) await this.initialize();
+
+        try {
+            const tx = await this.contracts.transactionRegistry.batchRegisterTransactions(
+                txHashes,
+                txTypes,
+                metadataHashes
+            );
+
+            const receipt = await tx.wait();
+            logger.info('✅ Batch transactions registered:', receipt.hash);
+
+            // Try to parse TransactionBatchRegistered event for tokenIds
+            const eventLog = receipt.logs.find((log) => {
+                try {
+                    const parsed = this.contracts.transactionRegistry.interface.parseLog(log);
+                    return parsed.name === 'TransactionBatchRegistered';
+                } catch {
+                    return false;
+                }
+            });
+
+            if (eventLog) {
+                const parsed = this.contracts.transactionRegistry.interface.parseLog(eventLog);
+                const tokenIds = parsed.args.tokenIds.map((x) => x.toString());
+                return { txHash: receipt.hash, tokenIds, blockNumber: receipt.blockNumber };
+            }
+
+            return { txHash: receipt.hash, blockNumber: receipt.blockNumber };
+        } catch (error) {
+            throw new Error(`Batch transaction registration failed: ${error.message}`);
+        }
+    }
+
+    /**
+     * Anchor a completed envelope on-chain (optional DocuSign-like proof).
+     * Contract: DocumentSignatureRegistry
+     */
+    async anchorEnvelope({ envelopeIdBytes32, documentFinalHash, signers, finalCID }) {
+        if (!this.isInitialized) await this.initialize();
+        if (!this.signer) throw new Error('PRIVATE_KEY not configured');
+        if (!this.contracts.documentRegistry) throw new Error('DocumentSignatureRegistry not configured');
+
+        try {
+            const tx = await this.contracts.documentRegistry.completeEnvelope(
+                envelopeIdBytes32,
+                documentFinalHash,
+                signers,
+                finalCID || ''
+            );
+            const receipt = await tx.wait();
+            return { txHash: receipt.hash, blockNumber: receipt.blockNumber };
+        } catch (error) {
+            throw new Error(`Envelope anchoring failed: ${error.message}`);
+        }
+    }
+
+    /**
+     * Access control helpers
+     */
+    async getAccessControlDomain() {
+        if (!this.isInitialized) await this.initialize();
+        const net = await this.provider.getNetwork();
+        return {
+            name: 'KYC-KYB DataAccessControl',
+            version: '1',
+            chainId: Number(net.chainId),
+            verifyingContract: await this.contracts.accessControl.getAddress()
+        };
+    }
+
+    async getAccessNonce(ownerAddress) {
+        if (!this.isInitialized) await this.initialize();
+        return Number(await this.contracts.accessControl.getNonce(ownerAddress));
+    }
+
+    async hasAccess(requester, dataOwner, tokenId) {
+        if (!this.isInitialized) await this.initialize();
+        return await this.contracts.accessControl.hasAccess(requester, dataOwner, tokenId);
+    }
+
+    async getAccessGrantDetails(accessId) {
+        if (!this.isInitialized) await this.initialize();
+        return await this.contracts.accessControl.getAccessGrantDetails(accessId);
+    }
+
+    async getTxReceipt(txHash) {
+        if (!this.isInitialized) await this.initialize();
+        return await this.provider.getTransactionReceipt(txHash);
+    }
+
+    async isSignerVerifier() {
+        if (!this.isInitialized) await this.initialize();
+        if (!this.signer) return false;
+        const addr = await this.signer.getAddress();
+        const role = await this.contracts.identityToken.VERIFIER_ROLE();
+        return await this.contracts.identityToken.hasRole(role, addr);
     }
 
     /**
@@ -177,7 +331,7 @@ class Web3Service {
             const recoveredAddress = ethers.verifyMessage(message, signature);
             return recoveredAddress.toLowerCase() === expectedAddress.toLowerCase();
         } catch (error) {
-            console.error('Signature verification failed:', error);
+            logger.error('Signature verification failed:', error);
             return false;
         }
     }
@@ -190,7 +344,7 @@ class Web3Service {
             const recoveredAddress = ethers.verifyTypedData(domain, types, value, signature);
             return recoveredAddress.toLowerCase() === expectedAddress.toLowerCase();
         } catch (error) {
-            console.error('Typed data signature verification failed:', error);
+            logger.error('Typed data signature verification failed:', error);
             return false;
         }
     }
@@ -202,9 +356,31 @@ class Web3Service {
         if (!this.isInitialized) await this.initialize();
 
         try {
+            // If contracts not loaded, return false gracefully
+            if (!this.contracts.identityToken) {
+                logger.warn('⚠️ IdentityToken contract not loaded, returning false for isVerified');
+                return false;
+            }
             return await this.contracts.identityToken.isVerified(userAddress);
         } catch (error) {
             throw new Error(`Verification check failed: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get user's IdentityToken id ("digital identity number") if present.
+     * Returns string tokenId or null.
+     */
+    async getIdentityTokenId(userAddress) {
+        if (!this.isInitialized) await this.initialize();
+
+        try {
+            const tokenId = await this.contracts.identityToken.userToToken(userAddress);
+            const n = Number(tokenId);
+            return n && n > 0 ? String(n) : null;
+        } catch (error) {
+            // If contract interface doesn't expose userToToken, just return null
+            return null;
         }
     }
 
@@ -239,7 +415,7 @@ class Web3Service {
 
         // Listen to IdentityMinted events
         this.contracts.identityToken.on('IdentityMinted', (tokenId, user, verifier, type, expiry, event) => {
-            console.log('📢 IdentityMinted event:', {
+            logger.info('📢 IdentityMinted event:', {
                 tokenId: tokenId.toString(),
                 user,
                 verifier,
@@ -250,7 +426,7 @@ class Web3Service {
 
         // Listen to TransactionRegistered events
         this.contracts.transactionRegistry.on('TransactionRegistered', (tokenId, registeredBy, txHash, txType, timestamp, event) => {
-            console.log('📢 TransactionRegistered event:', {
+            logger.info('📢 TransactionRegistered event:', {
                 tokenId: tokenId.toString(),
                 registeredBy,
                 txHash,
@@ -259,7 +435,7 @@ class Web3Service {
             });
         });
 
-        console.log('👂 Event listeners attached');
+        logger.info('👂 Event listeners attached');
     }
 
     /**

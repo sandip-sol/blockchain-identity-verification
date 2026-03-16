@@ -7,6 +7,7 @@ import { polygonMumbai, hardhat } from 'wagmi/chains';
 import { RainbowKitProvider, getDefaultConfig } from '@rainbow-me/rainbowkit';
 
 import { defineChain } from 'viem';
+import { AuthProvider } from '../context/AuthContext';
 
 const hoodi = defineChain({
     id: 560048,
@@ -53,7 +54,13 @@ export function Providers({ children }) {
         <WagmiProvider config={config}>
             <QueryClientProvider client={queryClient}>
                 <RainbowKitProvider>
-                    {mounted && children}
+                    <AuthProvider>
+                        {mounted ? children : (
+                            <div className="min-h-screen flex items-center justify-center">
+                                <div className="animate-pulse text-primary-400 text-xl">Loading...</div>
+                            </div>
+                        )}
+                    </AuthProvider>
                 </RainbowKitProvider>
             </QueryClientProvider>
         </WagmiProvider>

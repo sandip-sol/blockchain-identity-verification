@@ -1,3 +1,4 @@
+const logger = require('../services/logger');
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
@@ -96,17 +97,13 @@ router.post('/submit', upload.fields([
             status: 'PENDING'
         });
     } catch (error) {
-        console.error('KYC submission error:', error);
+        logger.error('KYC submission error:', error);
 
-        // Debugging: Write error to file
-        const fs = require('fs');
-        const path = require('path');
-        fs.appendFileSync(
-            path.join(__dirname, '../../debug_error.log'),
-            `${new Date().toISOString()} - ${error.stack}\n\n`
-        );
-
-        res.status(500).json({ error: error.message, stack: error.stack });
+        const isProduction = process.env.NODE_ENV === 'production';
+        res.status(500).json({
+            error: isProduction ? 'KYC submission failed' : error.message,
+            ...(isProduction ? {} : { stack: error.stack })
+        });
     }
 });
 
@@ -117,6 +114,19 @@ router.post('/submit', upload.fields([
  */
 router.post('/verify', async (req, res) => {
     try {
+        // Simple server-side protection:
+        // 1) Require an API key header
+        // 2) Ensure server signer actually has VERIFIER_ROLE on IdentityToken
+        const apiKey = req.get('x-admin-key') || req.get('authorization')?.replace(/^Bearer\s+/i, '');
+        if (!process.env.VERIFIER_API_KEY || apiKey !== process.env.VERIFIER_API_KEY) {
+            return res.status(401).json({ error: 'Unauthorized (missing/invalid verifier key)' });
+        }
+
+        const isVerifierSigner = await web3Service.isSignerVerifier();
+        if (!isVerifierSigner) {
+            return res.status(403).json({ error: 'Server signer does not have VERIFIER_ROLE' });
+        }
+
         const { walletAddress, expiryYears = 2 } = req.body;
 
         const user = await User.findOne({ walletAddress: walletAddress.toLowerCase() });
@@ -146,6 +156,8 @@ router.post('/verify', async (req, res) => {
         user.verifiedAt = new Date();
         user.expiryDate = new Date(expiryDate * 1000);
         user.verifier = (await web3Service.signer.getAddress());
+        user.mintTxHash = result.txHash || null;
+        user.mintBlockNumber = result.blockNumber || null;
 
         await user.save();
 
@@ -157,7 +169,7 @@ router.post('/verify', async (req, res) => {
             blockNumber: result.blockNumber
         });
     } catch (error) {
-        console.error('KYC verification error:', error);
+        logger.error('KYC verification error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -192,7 +204,7 @@ router.get('/status/:address', async (req, res) => {
             expiryDate: user.expiryDate
         });
     } catch (error) {
-        console.error('Status check error:', error);
+        logger.error('Status check error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -213,7 +225,7 @@ router.get('/token/:tokenId', async (req, res) => {
             metadata
         });
     } catch (error) {
-        console.error('Token metadata error:', error);
+        logger.error('Token metadata error:', error);
         res.status(500).json({ error: error.message });
     }
 });

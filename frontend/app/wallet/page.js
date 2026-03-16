@@ -1,25 +1,45 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { useRouter } from 'next/navigation';
 import { Wallet, Plus, FileText } from 'lucide-react';
 import Navbar from '../../components/Navbar';
 import Card, { CardHeader, CardContent } from '../../components/Card';
 import TransactionTable from '../../components/TransactionTable';
+import { useAPI } from '../../hooks/useAPI';
 
 export default function WalletPage() {
     const { address, isConnected } = useAccount();
     const router = useRouter();
-    const [transactions, setTransactions] = useState([
-        // Mock data - replace with actual API call
-        {
-            type: 'Identity Mint',
-            hash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-            status: 'verified',
-            timestamp: new Date().toISOString(),
-        },
-    ]);
+    const api = useAPI();
+    const [transactions, setTransactions] = useState([]);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        if (!isConnected || !address) return;
+
+        const fetchTransactions = async () => {
+            setLoading(true);
+            try {
+                const data = await api.get(`/api/transaction/history/${address}`);
+                const txList = (data.transactions || []).map((tx) => ({
+                    type: tx.txType || 'Unknown',
+                    hash: tx.blockchainTxHash || tx.txHash || '',
+                    status: tx.blockchainTxHash ? 'verified' : 'pending',
+                    timestamp: tx.timestamp || new Date().toISOString(),
+                }));
+                setTransactions(txList);
+            } catch (err) {
+                // User may not have any transactions yet — that's fine
+                setTransactions([]);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchTransactions();
+    }, [isConnected, address]);
 
     if (!isConnected) {
         return (
@@ -71,7 +91,7 @@ export default function WalletPage() {
                                 subtitle="All blockchain transactions related to your identity"
                             />
                             <CardContent className="p-0">
-                                <TransactionTable transactions={transactions} />
+                                <TransactionTable transactions={transactions} loading={loading} />
                             </CardContent>
                         </Card>
                     </div>

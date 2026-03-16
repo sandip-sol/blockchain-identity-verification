@@ -1,3 +1,4 @@
+const logger = require('./logger');
 const crypto = require('crypto');
 
 /**
@@ -7,7 +8,11 @@ const crypto = require('crypto');
  */
 
 const ALGORITHM = process.env.ENCRYPTION_ALGORITHM || 'aes-256-gcm';
-const MASTER_KEY = process.env.MASTER_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+const MASTER_KEY = process.env.MASTER_ENCRYPTION_KEY;
+if (!MASTER_KEY) {
+    logger.error('❌ FATAL: MASTER_ENCRYPTION_KEY environment variable is required');
+    process.exit(1);
+}
 
 class EncryptionService {
     /**

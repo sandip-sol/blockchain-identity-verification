@@ -1,6 +1,10 @@
 require("@nomicfoundation/hardhat-toolbox");
 require("dotenv").config();
 
+// Only use PRIVATE_KEY if it looks like a valid 32-byte hex string
+const PRIVATE_KEY = process.env.PRIVATE_KEY;
+const accounts = PRIVATE_KEY && /^[0-9a-fA-F]{64}$/.test(PRIVATE_KEY) ? [PRIVATE_KEY] : [];
+
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
     solidity: {
@@ -9,7 +13,8 @@ module.exports = {
             optimizer: {
                 enabled: true,
                 runs: 200
-            }
+            },
+            evmVersion: "cancun",
         }
     },
     networks: {
@@ -21,24 +26,18 @@ module.exports = {
         },
         hoodi: {
             url: process.env.HOODI_DEPLOY_RPC || "https://hoodi.infura.io/v3/",
-            accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+            accounts: accounts,
             chainId: 560048
-        },
-        mumbai: {
-            url: process.env.POLYGON_MUMBAI_RPC || "https://rpc-mumbai.maticvigil.com",
-            accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-            chainId: 80001
         },
         polygon: {
             url: process.env.POLYGON_RPC || "https://polygon-rpc.com",
-            accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+            accounts: accounts,
             chainId: 137
         }
     },
     etherscan: {
         apiKey: {
             hoodi: process.env.HOODI_API_KEY || "",
-            polygonMumbai: process.env.POLYGONSCAN_API_KEY || "",
             polygon: process.env.POLYGONSCAN_API_KEY || ""
         }
     },

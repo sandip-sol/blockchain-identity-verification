@@ -150,25 +150,26 @@ contract DataAccessControl is EIP712 {
 
     /**
      * @dev Check if requester currently has valid access to a specific token
-     * @param requester Address of the requester
-     * @param dataOwner Address of the data owner
-     * @param tokenId Token ID to check access for
+     * Capped at MAX_GRANTS_CHECK to prevent DoS with unbounded iteration.
+     * For large grant lists, use hasAccessPaginated().
      */
+    uint256 public constant MAX_GRANTS_CHECK = 100;
+
     function hasAccess(
         address requester,
         address dataOwner,
         uint256 tokenId
     ) external view returns (bool) {
         bytes32[] memory grants = ownerAccessGrants[dataOwner];
+        uint256 end = grants.length < MAX_GRANTS_CHECK ? grants.length : MAX_GRANTS_CHECK;
 
-        for (uint256 i = 0; i < grants.length; i++) {
+        for (uint256 i = 0; i < end; i++) {
             AccessGrant memory grant = accessGrants[grants[i]];
 
             if (grant.requester != requester) continue;
             if (grant.isRevoked) continue;
             if (grant.expiresAt <= block.timestamp) continue;
 
-            // Check if tokenId is in the granted tokens
             for (uint256 j = 0; j < grant.tokenIds.length; j++) {
                 if (grant.tokenIds[j] == tokenId) {
                     return true;
@@ -177,6 +178,41 @@ contract DataAccessControl is EIP712 {
         }
 
         return false;
+    }
+
+    /**
+     * @dev Paginated version of hasAccess for data owners with many grants.
+     * @param offset Start index in the ownerAccessGrants array
+     * @param limit Max number of grants to check
+     */
+    function hasAccessPaginated(
+        address requester,
+        address dataOwner,
+        uint256 tokenId,
+        uint256 offset,
+        uint256 limit
+    ) external view returns (bool found, uint256 nextOffset) {
+        bytes32[] memory grants = ownerAccessGrants[dataOwner];
+        if (offset >= grants.length) return (false, grants.length);
+
+        uint256 end = offset + limit;
+        if (end > grants.length) end = grants.length;
+
+        for (uint256 i = offset; i < end; i++) {
+            AccessGrant memory grant = accessGrants[grants[i]];
+
+            if (grant.requester != requester) continue;
+            if (grant.isRevoked) continue;
+            if (grant.expiresAt <= block.timestamp) continue;
+
+            for (uint256 j = 0; j < grant.tokenIds.length; j++) {
+                if (grant.tokenIds[j] == tokenId) {
+                    return (true, i + 1);
+                }
+            }
+        }
+
+        return (false, end);
     }
 
     /**

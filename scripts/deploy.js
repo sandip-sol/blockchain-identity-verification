@@ -36,6 +36,14 @@ async function main() {
     const dataAccessControlAddress = await dataAccessControl.getAddress();
     console.log("✅ DataAccessControl deployed to:", dataAccessControlAddress);
 
+    // Deploy DocumentSignatureRegistry (DocuSign-like proof)
+    console.log("\n📝 Deploying DocumentSignatureRegistry...");
+    const DocumentSignatureRegistry = await hre.ethers.getContractFactory("DocumentSignatureRegistry");
+    const documentSignatureRegistry = await DocumentSignatureRegistry.deploy();
+    await documentSignatureRegistry.waitForDeployment();
+    const documentSignatureRegistryAddress = await documentSignatureRegistry.getAddress();
+    console.log("✅ DocumentSignatureRegistry deployed to:", documentSignatureRegistryAddress);
+
     // Save deployment addresses
     const deploymentInfo = {
         network: hre.network.name,
@@ -44,7 +52,8 @@ async function main() {
         contracts: {
             IdentityToken: identityTokenAddress,
             TransactionRegistry: transactionRegistryAddress,
-            DataAccessControl: dataAccessControlAddress
+            DataAccessControl: dataAccessControlAddress,
+            DocumentSignatureRegistry: documentSignatureRegistryAddress
         }
     };
 
@@ -75,6 +84,7 @@ async function main() {
     console.log("IdentityToken:        ", identityTokenAddress);
     console.log("TransactionRegistry:  ", transactionRegistryAddress);
     console.log("DataAccessControl:    ", dataAccessControlAddress);
+    console.log("DocumentSignatureRegistry:", documentSignatureRegistryAddress);
     console.log("=".repeat(60));
 
     if (hre.network.name !== "hardhat" && hre.network.name !== "localhost") {

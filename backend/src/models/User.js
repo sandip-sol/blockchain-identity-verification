@@ -42,6 +42,15 @@ const userSchema = new mongoose.Schema({
         type: String,
         default: null
     },
+    // On-chain mint transaction for IdentityToken (useful for activity history)
+    mintTxHash: {
+        type: String,
+        default: null
+    },
+    mintBlockNumber: {
+        type: Number,
+        default: null
+    },
     kycData: {
         fullName: String,
         email: String,
@@ -57,9 +66,13 @@ const userSchema = new mongoose.Schema({
     },
     transactionTokens: [{
         tokenId: String,
+        // hash of the off-chain payload, used as key in TransactionRegistry
         txHash: String,
         txType: String,
-        timestamp: Date
+        timestamp: Date,
+        // actual blockchain transaction hash for minting the ERC-1155 token
+        blockchainTxHash: { type: String, default: null },
+        blockNumber: { type: Number, default: null }
     }],
     metadata: {
         type: Map,

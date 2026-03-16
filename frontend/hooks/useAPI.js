@@ -1,7 +1,7 @@
 'use client';
 
 import axios from 'axios';
-import { useCallback } from 'useState';
+import { useCallback } from 'react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 const API_TIMEOUT = parseInt(process.env.NEXT_PUBLIC_API_TIMEOUT) || 30000;
@@ -19,7 +19,7 @@ const apiClient = axios.create({
 apiClient.interceptors.request.use(
     (config) => {
         // Add auth token if available
-        const token = localStorage.getItem('authToken');
+        const token = localStorage.getItem('kyc_token');
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
