@@ -1,3 +1,4 @@
+const logger = require('../services/logger');
 const express = require('express');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
@@ -30,7 +31,7 @@ const loginSchema = Joi.object({
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
-  console.error('❌ FATAL: JWT_SECRET environment variable is required');
+  logger.error('❌ FATAL: JWT_SECRET environment variable is required');
   process.exit(1);
 }
 
@@ -77,18 +78,18 @@ router.post('/register', async (req, res) => {
 
     // Generate JWT
     const token = jwt.sign(
-      { sub: account._id, email: account.email, typ: 'email', iat: Math.floor(Date.now() / 1000) },
+      { sub: account._id, email: account.email, role: account.role || 'user', typ: 'email', iat: Math.floor(Date.now() / 1000) },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
 
     // Return account without password
-    const accountData = { _id: account._id, email: account.email, name: account.name, createdAt: account.createdAt };
+    const accountData = { _id: account._id, email: account.email, name: account.name, role: account.role || 'user', createdAt: account.createdAt };
 
     res.status(201).json({ token, account: accountData });
   } catch (error) {
-    console.error('Registration error:', error.message);
-    console.error('Full error:', error);
+    logger.error('Registration error:', error.message);
+    logger.error('Full error:', error);
 
     // Handle MongoDB duplicate key error
     if (error.code === 11000) {
@@ -131,7 +132,7 @@ router.post('/login', async (req, res) => {
 
     // Generate JWT
     const token = jwt.sign(
-      { sub: account._id, email: account.email, typ: 'email', iat: Math.floor(Date.now() / 1000) },
+      { sub: account._id, email: account.email, role: account.role || 'user', typ: 'email', iat: Math.floor(Date.now() / 1000) },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -141,13 +142,14 @@ router.post('/login', async (req, res) => {
       _id: account._id,
       email: account.email,
       name: account.name,
+      role: account.role || 'user',
       address: account.address,
       createdAt: account.createdAt
     };
 
     res.json({ token, account: accountData });
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('Login error:', error);
     res.status(500).json({ error: 'Login failed' });
   }
 });
@@ -222,7 +224,7 @@ router.post('/link-wallet', authMiddleware, async (req, res) => {
 
     res.json({ success: true, address: addr, account: { _id: account._id, email: account.email, address: account.address } });
   } catch (error) {
-    console.error('Link wallet error:', error);
+    logger.error('Link wallet error:', error);
     res.status(500).json({ error: 'Failed to link wallet' });
   }
 });

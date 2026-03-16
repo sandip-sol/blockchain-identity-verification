@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { Shield, Home, FileCheck, Search, Wallet, FileSignature, Activity } from 'lucide-react';
+import { Shield, Home, FileCheck, Search, Wallet, FileSignature, Activity, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Navbar() {
@@ -20,19 +20,25 @@ export default function Navbar() {
         { href: '/wallet', label: 'Transaction Proofs', icon: Wallet },
         { href: '/activity', label: 'Activity', icon: Activity },
         { href: '/envelopes', label: 'Envelopes', icon: FileSignature },
+        ...(auth.account?.role === 'admin' ? [{ href: '/admin', label: 'Admin', icon: ShieldCheck }] : []),
     ];
 
     return (
-        <nav className="glass-card m-4 p-4 sticky top-4 z-50 transition-all duration-300">
-            <div className="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-4">
+        <nav className="sticky top-0 z-50 border-b border-white/10 bg-[#0b0c10]/85 backdrop-blur supports-[backdrop-filter]:bg-[#0b0c10]/60">
+            <div className="max-w-7xl mx-auto px-4 py-4 flex flex-wrap justify-between items-center gap-4">
                 {/* Logo */}
                 <Link href="/" className="flex items-center space-x-3 group">
-                    <Shield className="w-8 h-8 text-primary-400 group-hover:scale-110 transition-transform duration-300" />
-                    <h1 className="text-2xl font-bold text-gradient">KYC/KYB Platform</h1>
+                    <div className="h-9 w-9 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center">
+                        <Shield className="w-5 h-5 text-primary-400" />
+                    </div>
+                    <div className="leading-tight">
+                        <div className="text-xs uppercase tracking-widest text-white/50">Identity & Signing</div>
+                        <div className="text-lg font-semibold tracking-tight text-white">KYC/KYB Platform</div>
+                    </div>
                 </Link>
 
                 {/* Desktop Navigation */}
-                <div className="hidden md:flex items-center gap-1 bg-white/5 p-1 rounded-xl border border-white/10">
+                <div className="hidden md:flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] p-1">
                     {auth.isAuthenticated && navItems.slice(1).map((item) => {
                         const Icon = item.icon;
                         const isActive = pathname === item.href;
@@ -42,10 +48,10 @@ export default function Navbar() {
                                 key={item.href}
                                 href={item.href}
                                 className={`
-                                    flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-300
+                                    flex items-center gap-2 px-3 py-2 rounded-full transition-all duration-300
                                     ${isActive
-                                        ? 'bg-primary-500/20 text-primary-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]'
-                                        : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                        ? 'bg-white/[0.06] text-white border border-white/10'
+                                        : 'text-white/70 hover:text-white hover:bg-white/[0.04]'
                                     }
                                 `}
                             >
@@ -82,7 +88,7 @@ export default function Navbar() {
                     {/* Mobile Menu Toggle */}
                     {auth.isAuthenticated && (
                         <button
-                            className="md:hidden p-2 text-gray-400 hover:text-white"
+                            className="md:hidden p-2 text-white/70 hover:text-white"
                             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
                         >
                             <div className="space-y-1.5">
@@ -109,8 +115,8 @@ export default function Navbar() {
                                 className={`
                                     flex items-center gap-2 px-4 py-3 rounded-lg border transition-all
                                     ${isActive
-                                        ? 'bg-primary-500/10 border-primary-500/30 text-primary-400'
-                                        : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10'
+                                        ? 'bg-white/[0.06] border-white/15 text-white'
+                                        : 'bg-white/[0.03] border-white/10 text-white/70 hover:bg-white/[0.06]'
                                     }
                                 `}
                             >

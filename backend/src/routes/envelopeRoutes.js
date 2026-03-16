@@ -1,3 +1,4 @@
+const logger = require('../services/logger');
 const express = require('express');
 const { ethers } = require('ethers');
 const crypto = require('crypto');
@@ -294,8 +295,12 @@ router.get('/:envelopeId/verify', async (req, res) => {
 router.get('/:envelopeId/typed-data', async (req, res) => {
   try {
     const { envelopeId } = req.params;
-    const recipientAddress = (req.query.recipientAddress || '').toString().toLowerCase();
-    if (!recipientAddress) return res.status(400).json({ error: 'recipientAddress query param is required' });
+    const rawAddr = (req.query.recipientAddress || '').toString().trim();
+    if (!rawAddr) return res.status(400).json({ error: 'recipientAddress query param is required' });
+
+    // Use checksum address for EIP-712 typed data (must match exactly on both sides)
+    const checksumAddress = ethers.getAddress(rawAddr);
+    const recipientAddress = checksumAddress.toLowerCase(); // for DB lookup only
 
     const env = await Envelope.findOne({ envelopeId });
     if (!env) return res.status(404).json({ error: 'Envelope not found' });
@@ -328,16 +333,18 @@ router.get('/:envelopeId/typed-data', async (req, res) => {
     rec.deadline = new Date(deadline * 1000);
     await rec.save();
 
+    const documentHashHex = '0x' + env.documentOriginalHash;
+
     const message = {
       envelopeId: envelopeIdBytes32,
-      documentHash: ethers.hexlify(Buffer.from(env.documentOriginalHash, 'hex')),
-      recipient: recipientAddress,
+      documentHash: documentHashHex,
+      recipient: checksumAddress,
       nonce: rec.nonce,
       deadline,
     };
 
     const typedDataHash = ethers.TypedDataEncoder.hash(domain, types, message);
-    res.json({ domain, types, message, typedDataHash, envelopeId, recipientAddress, nonce: rec.nonce, deadline });
+    res.json({ domain, types, message, typedDataHash, envelopeId, recipientAddress: checksumAddress, nonce: rec.nonce, deadline });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -355,12 +362,15 @@ router.post('/:envelopeId/sign', async (req, res) => {
       return res.status(400).json({ error: 'recipientAddress and signature are required' });
     }
 
+    // Use checksum address for EIP-712 verification (must match what the user signed)
+    const checksumAddress = ethers.getAddress(recipientAddress);
+
     const env = await Envelope.findOne({ envelopeId });
     if (!env) return res.status(404).json({ error: 'Envelope not found' });
     if (!env.documentOriginalCID || !env.documentOriginalHash) return res.status(400).json({ error: 'Envelope has no document' });
     if (env.status === 'COMPLETED' || env.status === 'VOID') return res.status(400).json({ error: 'Envelope not signable' });
 
-    const rec = await Recipient.findOne({ envelopeId, recipientAddress: recipientAddress.toLowerCase() });
+    const rec = await Recipient.findOne({ envelopeId, recipientAddress: checksumAddress.toLowerCase() });
     if (!rec) return res.status(404).json({ error: 'Recipient not found for this envelope' });
     if (rec.status === 'SIGNED') return res.status(400).json({ error: 'Recipient already signed' });
 
@@ -388,16 +398,18 @@ router.post('/:envelopeId/sign', async (req, res) => {
       return res.status(400).json({ error: 'Signature deadline expired. Request typed-data again.' });
     }
 
+    const documentHashHex = '0x' + env.documentOriginalHash;
+
     const message = {
       envelopeId: envelopeIdBytes32,
-      documentHash: ethers.hexlify(Buffer.from(env.documentOriginalHash, 'hex')),
-      recipient: recipientAddress,
+      documentHash: documentHashHex,
+      recipient: checksumAddress,
       nonce: rec.nonce,
       deadline,
     };
 
     const recovered = ethers.verifyTypedData(domain, types, message, signature);
-    if (recovered.toLowerCase() !== recipientAddress.toLowerCase()) {
+    if (recovered.toLowerCase() !== checksumAddress.toLowerCase()) {
       return res.status(401).json({ error: 'Invalid typed-data signature' });
     }
 
@@ -415,11 +427,11 @@ router.post('/:envelopeId/sign', async (req, res) => {
     let signatureImageCID;
     let signatureImageHash;
     // Digital identity number (IdentityToken id) if signer has KYC SBT
-    const identityTokenId = await web3Service.getIdentityTokenId(recipientAddress);
+    const identityTokenId = await web3Service.getIdentityTokenId(checksumAddress);
     if (signatureImageBase64) {
       const sigBytes = Buffer.from(signatureImageBase64, 'base64');
       signatureImageHash = sha256Hex(sigBytes);
-      signatureImageCID = await ipfsService.uploadRaw(sigBytes, `signature-${envelopeId}-${recipientAddress}.png`);
+      signatureImageCID = await ipfsService.uploadRaw(sigBytes, `signature-${envelopeId}-${checksumAddress}.png`);
 
       const p = placement || {};
       updatedPdfBytes = await stampSignature({
@@ -468,7 +480,7 @@ router.post('/:envelopeId/sign', async (req, res) => {
           const signers = (await Recipient.find({ envelopeId, role: 'SIGNER' })).map(r => r.recipientAddress);
           const { txHash } = await web3Service.anchorEnvelope({
             envelopeIdBytes32,
-            documentFinalHash: ethers.hexlify(Buffer.from(env.documentFinalHash, 'hex')),
+            documentFinalHash: '0x' + env.documentFinalHash,
             signers,
             finalCID: env.documentFinalCID,
           });

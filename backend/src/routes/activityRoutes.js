@@ -1,3 +1,4 @@
+const logger = require('../services/logger');
 const express = require('express');
 const router = express.Router();
 

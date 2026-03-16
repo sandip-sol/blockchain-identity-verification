@@ -1,3 +1,4 @@
+const logger = require('../services/logger');
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
@@ -96,17 +97,13 @@ router.post('/submit', upload.fields([
             status: 'PENDING'
         });
     } catch (error) {
-        console.error('KYC submission error:', error);
+        logger.error('KYC submission error:', error);
 
-        // Debugging: Write error to file
-        const fs = require('fs');
-        const path = require('path');
-        fs.appendFileSync(
-            path.join(__dirname, '../../debug_error.log'),
-            `${new Date().toISOString()} - ${error.stack}\n\n`
-        );
-
-        res.status(500).json({ error: error.message, stack: error.stack });
+        const isProduction = process.env.NODE_ENV === 'production';
+        res.status(500).json({
+            error: isProduction ? 'KYC submission failed' : error.message,
+            ...(isProduction ? {} : { stack: error.stack })
+        });
     }
 });
 
@@ -172,7 +169,7 @@ router.post('/verify', async (req, res) => {
             blockNumber: result.blockNumber
         });
     } catch (error) {
-        console.error('KYC verification error:', error);
+        logger.error('KYC verification error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -207,7 +204,7 @@ router.get('/status/:address', async (req, res) => {
             expiryDate: user.expiryDate
         });
     } catch (error) {
-        console.error('Status check error:', error);
+        logger.error('Status check error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -228,7 +225,7 @@ router.get('/token/:tokenId', async (req, res) => {
             metadata
         });
     } catch (error) {
-        console.error('Token metadata error:', error);
+        logger.error('Token metadata error:', error);
         res.status(500).json({ error: error.message });
     }
 });

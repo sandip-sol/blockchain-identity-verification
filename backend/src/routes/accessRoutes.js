@@ -1,3 +1,4 @@
+const logger = require('../services/logger');
 const express = require('express');
 const router = express.Router();
 const AccessLog = require('../models/AccessLog');
@@ -45,7 +46,7 @@ router.post('/request', async (req, res) => {
             expiresAt
         });
     } catch (error) {
-        console.error('Access request error:', error);
+        logger.error('Access request error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -158,7 +159,7 @@ router.post('/grant', async (req, res) => {
             expiresAt: accessLog.expiresAt
         });
     } catch (error) {
-        console.error('Access grant error:', error);
+        logger.error('Access grant error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -241,7 +242,7 @@ router.post('/revoke', async (req, res) => {
             accessId
         });
     } catch (error) {
-        console.error('Access revoke error:', error);
+        logger.error('Access revoke error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -268,7 +269,7 @@ router.get('/logs/:address', async (req, res) => {
             logs
         });
     } catch (error) {
-        console.error('Access logs error:', error);
+        logger.error('Access logs error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -308,7 +309,7 @@ router.get('/typed-data/:accessId', async (req, res) => {
 
         res.status(200).json({ success: true, domain, types, value });
     } catch (error) {
-        console.error('Typed data error:', error);
+        logger.error('Typed data error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -356,7 +357,7 @@ router.post('/decrypt', async (req, res) => {
             }
         } catch (e) {
             // If contracts aren't configured (e.g., missing deployment file), fall back to DB checks.
-            console.warn('⚠️ On-chain access check skipped:', e.message);
+            logger.warn('⚠️ On-chain access check skipped:', e.message);
         }
 
         // Get user data
@@ -386,7 +387,7 @@ router.post('/decrypt', async (req, res) => {
             accessCount: accessLog.accessCount
         });
     } catch (error) {
-        console.error('Decryption error:', error);
+        logger.error('Decryption error:', error);
         res.status(500).json({ error: 'Decryption failed: ' + error.message });
     }
 });

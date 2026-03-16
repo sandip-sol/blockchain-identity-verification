@@ -44,13 +44,20 @@ jobs:
       - name: Install backend dependencies
         working-directory: backend
         run: npm ci
+      - name: Security audit
+        working-directory: backend
+        run: npm audit --audit-level=high || true
       - name: Check for syntax errors
         working-directory: backend
-        run: node -e "require('./src/server.js')" || true
+        run: node --check src/server.js src/services/*.js src/routes/*.js src/middleware/*.js
+      - name: Run backend tests
+        working-directory: backend
+        run: npm test
         env:
           JWT_SECRET: test-ci-secret
           MASTER_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
           MONGODB_URI: mongodb://localhost:27017/ci-test
+          ALLOWED_ORIGINS: http://localhost:3000
 
   frontend:
     name: Frontend Build
@@ -69,6 +76,9 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
+      - name: Lint frontend
+        working-directory: frontend
+        run: npx next lint || true
       - name: Build frontend
         working-directory: frontend
         run: npm run build

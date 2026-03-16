@@ -1,12 +1,18 @@
 /**
  * IPFS Service
- * Handles decentralized storage operations for encrypted documents
+ * Handles decentralized storage operations for encrypted documents.
+ * Supports: IPFS node, Pinata (production), local fallback (development).
  */
+
+const logger = require('./logger');
 
 class IPFSService {
     constructor() {
         this.client = null;
         this.isInitialized = false;
+        this.pinataApiKey = null;
+        this.pinataSecretKey = null;
+        this.usePinata = false;
     }
 
     /**
@@ -14,6 +20,16 @@ class IPFSService {
      */
     async initialize() {
         if (this.isInitialized) return;
+
+        // Pinata (preferred for production)
+        if (process.env.PINATA_API_KEY && process.env.PINATA_SECRET_KEY) {
+            this.pinataApiKey = process.env.PINATA_API_KEY;
+            this.pinataSecretKey = process.env.PINATA_SECRET_KEY;
+            this.usePinata = true;
+            this.isInitialized = true;
+            logger.info('IPFS service initialized with Pinata');
+            return;
+        }
 
         try {
             // Dynamic import for ESM compatibility
@@ -34,20 +50,67 @@ class IPFSService {
                 ipfsConfig.host = 'ipfs.infura.io';
                 ipfsConfig.port = 5001;
                 ipfsConfig.protocol = 'https';
-                ipfsConfig.headers = {
-                    authorization: auth
-                };
+                ipfsConfig.headers = { authorization: auth };
             }
 
             this.client = create(ipfsConfig);
             this.isInitialized = true;
 
-            console.log('✅ IPFS client initialized');
+            logger.info('IPFS client initialized', { host: ipfsConfig.host });
         } catch (error) {
-            console.error('❌ IPFS initialization failed:', error.message);
+            logger.error('IPFS initialization failed', { error: error.message });
             throw new Error(`IPFS initialization failed: ${error.message}`);
         }
     }
+
+    // ──────────────────────────── Pinata helpers ────────────────────────────
+
+    async _pinataUpload(data) {
+        const https = require('https');
+        return new Promise((resolve, reject) => {
+            const body = JSON.stringify({ pinataContent: data });
+            const req = https.request({
+                hostname: 'api.pinata.cloud',
+                path: '/pinning/pinJSONToIPFS',
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'pinata_api_key': this.pinataApiKey,
+                    'pinata_secret_api_key': this.pinataSecretKey,
+                    'Content-Length': Buffer.byteLength(body)
+                }
+            }, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => {
+                    try {
+                        const parsed = JSON.parse(data);
+                        if (parsed.IpfsHash) resolve(parsed.IpfsHash);
+                        else reject(new Error('Pinata upload failed: ' + data));
+                    } catch (e) { reject(e); }
+                });
+            });
+            req.on('error', reject);
+            req.write(body);
+            req.end();
+        });
+    }
+
+    async _pinataRetrieve(cid) {
+        const https = require('https');
+        return new Promise((resolve, reject) => {
+            https.get(`https://gateway.pinata.cloud/ipfs/${cid}`, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => {
+                    try { resolve(JSON.parse(data)); }
+                    catch (e) { reject(new Error('Failed to parse Pinata data')); }
+                });
+            }).on('error', reject);
+        });
+    }
+
+    // ──────────────────────────── Public API ────────────────────────────────
 
     /**
      * Upload encrypted data to IPFS (or local fallback)
@@ -55,40 +118,49 @@ class IPFSService {
      * @returns {string} - IPFS CID or local ID
      */
     async uploadToIPFS(encryptedData) {
-        if (!this.isInitialized) {
-            await this.initialize();
+        if (!this.isInitialized) await this.initialize();
+
+        // Pinata path
+        if (this.usePinata) {
+            try {
+                const cid = await this._pinataUpload(encryptedData);
+                logger.info('Uploaded to Pinata IPFS', { cid });
+                return cid;
+            } catch (error) {
+                logger.warn('Pinata upload failed, falling back to local', { error: error.message });
+                return this.saveLocally(encryptedData);
+            }
         }
 
         try {
             const dataBuffer = Buffer.from(JSON.stringify(encryptedData));
             const result = await this.client.add(dataBuffer, { timeout: 5000 });
 
-            console.log('📤 Uploaded to IPFS:', result.path);
-            return result.path; // CID
+            logger.info('Uploaded to IPFS', { cid: result.path });
+            return result.path;
         } catch (error) {
-            console.warn('⚠️ IPFS upload failed, falling back to local storage:', error.message);
-            // Fallback to local storage
+            logger.warn('IPFS upload failed, falling back to local storage', { error: error.message });
+            if (process.env.NODE_ENV === 'production') {
+                logger.error('CRITICAL: Local fallback used in production — data is NOT replicated');
+            }
             return this.saveLocally(encryptedData);
         }
     }
 
     /**
-     * Upload raw bytes (e.g., PDF / PNG) to IPFS with local fallback.
-     * Returns CID or local id.
+     * Upload raw bytes to IPFS with local fallback.
      * @param {Buffer} bytes
      * @param {string} filename
      */
     async uploadRaw(bytes, filename = 'file.bin') {
-        if (!this.isInitialized) {
-            await this.initialize();
-        }
+        if (!this.isInitialized) await this.initialize();
 
         try {
             const result = await this.client.add(bytes, { timeout: 10000, pin: true, wrapWithDirectory: false });
-            console.log('📤 Uploaded raw to IPFS:', result.path, filename);
+            logger.info('Uploaded raw to IPFS', { cid: result.path, filename });
             return result.path;
         } catch (error) {
-            console.warn('⚠️ IPFS raw upload failed, falling back to local storage:', error.message);
+            logger.warn('IPFS raw upload failed, falling back to local', { error: error.message });
             return this.saveLocallyRaw(bytes, filename);
         }
     }
@@ -103,9 +175,7 @@ class IPFSService {
             return this.retrieveLocallyRaw(cid);
         }
 
-        if (!this.isInitialized) {
-            await this.initialize();
-        }
+        if (!this.isInitialized) await this.initialize();
 
         try {
             const chunks = [];
@@ -114,7 +184,7 @@ class IPFSService {
             }
             return Buffer.concat(chunks);
         } catch (error) {
-            console.warn('⚠️ IPFS raw retrieval failed, checking local:', error.message);
+            logger.warn('IPFS raw retrieval failed, checking local', { error: error.message });
             return this.retrieveLocallyRaw(cid);
         }
     }
@@ -129,32 +199,35 @@ class IPFSService {
             return this.retrieveLocally(cid);
         }
 
-        if (!this.isInitialized) {
-            await this.initialize();
+        // Pinata path
+        if (this.usePinata) {
+            try {
+                return await this._pinataRetrieve(cid);
+            } catch (error) {
+                logger.warn('Pinata retrieval failed, checking local', { error: error.message });
+                return this.retrieveLocally(cid);
+            }
         }
+
+        if (!this.isInitialized) await this.initialize();
 
         try {
             const chunks = [];
-
             for await (const chunk of this.client.cat(cid, { timeout: 5000 })) {
                 chunks.push(chunk);
             }
-
             const data = Buffer.concat(chunks).toString('utf8');
-            console.log('📥 Retrieved from IPFS:', cid);
-
+            logger.info('Retrieved from IPFS', { cid });
             return JSON.parse(data);
         } catch (error) {
-            console.warn('⚠️ IPFS retrieval failed, checking local:', error.message);
-            // Try local as a backup even if not prefixed
+            logger.warn('IPFS retrieval failed, checking local', { error: error.message });
             return this.retrieveLocally(cid);
         }
     }
 
-    // ... (pin/unpin remain similar but should check for local)
-
     async pinDocument(cid) {
         if (cid.startsWith('local-')) return true;
+        if (this.usePinata) return true; // Pinata auto-pins on upload
         try {
             await this.client.pin.add(cid, { timeout: 5000 });
             return true;
@@ -174,7 +247,8 @@ class IPFSService {
         return true;
     }
 
-    // Local Storage Fallback Helpers
+    // ──────────────────────────── Local Fallback ────────────────────────────
+
     saveLocally(data) {
         const fs = require('fs');
         const path = require('path');
@@ -188,7 +262,7 @@ class IPFSService {
         const filePath = path.join(uploadDir, id + '.json');
 
         fs.writeFileSync(filePath, JSON.stringify(data));
-        console.log('💾 Saved locally:', id);
+        logger.info('Saved locally', { id });
         return id;
     }
 
@@ -204,7 +278,7 @@ class IPFSService {
         const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
         const filePath = path.join(uploadDir, `${id}-${safe}`);
         fs.writeFileSync(filePath, bytes);
-        console.log('💾 Saved raw locally:', id);
+        logger.info('Saved raw locally', { id });
         return id;
     }
 
@@ -213,7 +287,6 @@ class IPFSService {
         const path = require('path');
         const uploadDir = path.join(__dirname, '../../uploads_raw');
 
-        // If caller passed just id, search for matching prefix
         if (idOrPath.startsWith('localraw-')) {
             if (!fs.existsSync(uploadDir)) throw new Error('Local raw storage not initialized');
             const files = fs.readdirSync(uploadDir);
@@ -222,33 +295,21 @@ class IPFSService {
             return fs.readFileSync(path.join(uploadDir, match));
         }
 
-        // Otherwise treat as filename
         return fs.readFileSync(path.join(uploadDir, idOrPath));
     }
 
     retrieveLocally(id) {
         const fs = require('fs');
         const path = require('path');
-        const filePath = path.join(__dirname, '../../uploads', id + '.json'); // Handle both IDs
+        const filePath = path.join(__dirname, '../../uploads', id + '.json');
 
-        // Use exact ID as filename
-        const exactPath = path.join(__dirname, '../../uploads', id.startsWith('local-') ? (id + '.json') : ('local-' + id + '.json'));
-
-        if (fs.existsSync(filePath)) {
-            return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        }
-
-        // Try without .json or as-is if passed with .json, simplified:
-        // Actually, just trust the ID format I generated
         try {
             return JSON.parse(fs.readFileSync(filePath, 'utf8'));
         } catch (e) {
-            console.error('Local retrieval failed:', e.message);
+            logger.error('Local retrieval failed', { id, error: e.message });
             throw new Error('Document not found locally or on IPFS');
         }
     }
-
-    // NOTE: raw local storage helpers are defined above (uploads_raw).
 }
 
 // Export singleton instance

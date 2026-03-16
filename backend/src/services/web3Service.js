@@ -1,3 +1,4 @@
+const logger = require('./logger');
 const { ethers } = require('ethers');
 const fs = require('fs');
 const path = require('path');
@@ -29,16 +30,16 @@ class Web3Service {
             // Setup signer if private key available
             if (process.env.PRIVATE_KEY) {
                 this.signer = new ethers.Wallet(process.env.PRIVATE_KEY, this.provider);
-                console.log('✅ Signer initialized:', this.signer.address);
+                logger.info('✅ Signer initialized:', this.signer.address);
             }
 
             // Load contract ABIs and addresses
             await this.loadContracts();
 
             this.isInitialized = true;
-            console.log('✅ Web3 service initialized');
+            logger.info('✅ Web3 service initialized');
         } catch (error) {
-            console.error('❌ Web3 initialization failed:', error.message);
+            logger.error('❌ Web3 initialization failed:', error.message);
             throw new Error(`Web3 initialization failed: ${error.message}`);
         }
     }
@@ -97,12 +98,12 @@ class Web3Service {
                     );
                 }
 
-                console.log('✅ Contracts loaded successfully');
+                logger.info('✅ Contracts loaded successfully');
             } else {
-                console.warn('⚠️  No deployment file found. Contracts not loaded.');
+                logger.warn('⚠️  No deployment file found. Contracts not loaded.');
             }
         } catch (error) {
-            console.error('Contract loading error:', error.message);
+            logger.error('Contract loading error:', error.message);
         }
     }
 
@@ -151,7 +152,7 @@ class Web3Service {
             );
 
             const receipt = await tx.wait();
-            console.log('✅ Identity token minted:', receipt.hash);
+            logger.info('✅ Identity token minted:', receipt.hash);
 
             // Extract token ID from event
             const event = receipt.logs.find(log => {
@@ -192,7 +193,7 @@ class Web3Service {
             );
 
             const receipt = await tx.wait();
-            console.log('✅ Transaction registered:', receipt.hash);
+            logger.info('✅ Transaction registered:', receipt.hash);
 
             // Extract token ID from TransactionRegistered event
             const eventLog = receipt.logs.find((log) => {
@@ -233,7 +234,7 @@ class Web3Service {
             );
 
             const receipt = await tx.wait();
-            console.log('✅ Batch transactions registered:', receipt.hash);
+            logger.info('✅ Batch transactions registered:', receipt.hash);
 
             // Try to parse TransactionBatchRegistered event for tokenIds
             const eventLog = receipt.logs.find((log) => {
@@ -330,7 +331,7 @@ class Web3Service {
             const recoveredAddress = ethers.verifyMessage(message, signature);
             return recoveredAddress.toLowerCase() === expectedAddress.toLowerCase();
         } catch (error) {
-            console.error('Signature verification failed:', error);
+            logger.error('Signature verification failed:', error);
             return false;
         }
     }
@@ -343,7 +344,7 @@ class Web3Service {
             const recoveredAddress = ethers.verifyTypedData(domain, types, value, signature);
             return recoveredAddress.toLowerCase() === expectedAddress.toLowerCase();
         } catch (error) {
-            console.error('Typed data signature verification failed:', error);
+            logger.error('Typed data signature verification failed:', error);
             return false;
         }
     }
@@ -357,7 +358,7 @@ class Web3Service {
         try {
             // If contracts not loaded, return false gracefully
             if (!this.contracts.identityToken) {
-                console.warn('⚠️ IdentityToken contract not loaded, returning false for isVerified');
+                logger.warn('⚠️ IdentityToken contract not loaded, returning false for isVerified');
                 return false;
             }
             return await this.contracts.identityToken.isVerified(userAddress);
@@ -414,7 +415,7 @@ class Web3Service {
 
         // Listen to IdentityMinted events
         this.contracts.identityToken.on('IdentityMinted', (tokenId, user, verifier, type, expiry, event) => {
-            console.log('📢 IdentityMinted event:', {
+            logger.info('📢 IdentityMinted event:', {
                 tokenId: tokenId.toString(),
                 user,
                 verifier,
@@ -425,7 +426,7 @@ class Web3Service {
 
         // Listen to TransactionRegistered events
         this.contracts.transactionRegistry.on('TransactionRegistered', (tokenId, registeredBy, txHash, txType, timestamp, event) => {
-            console.log('📢 TransactionRegistered event:', {
+            logger.info('📢 TransactionRegistered event:', {
                 tokenId: tokenId.toString(),
                 registeredBy,
                 txHash,
@@ -434,7 +435,7 @@ class Web3Service {
             });
         });
 
-        console.log('👂 Event listeners attached');
+        logger.info('👂 Event listeners attached');
     }
 
     /**

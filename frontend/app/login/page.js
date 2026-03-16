@@ -77,22 +77,27 @@ export default function AuthPage() {
   const canSubmit = email && password && (isLogin || password.length >= 6) && !loading;
 
   return (
-    <div className="min-h-screen flex flex-col relative overflow-hidden">
-      {/* Animated Background */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="blob blob-1"></div>
-        <div className="blob blob-2"></div>
-        <div className="blob blob-3"></div>
-        <div className="absolute inset-0 bg-white/5 backdrop-blur-[100px]"></div>
+    <div className="min-h-screen flex flex-col relative overflow-hidden fabric-noise">
+      {/* Fabric-style background */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute inset-0 fabric-grid opacity-40" />
+        <div className="absolute -top-40 -left-40 w-[520px] h-[520px] rounded-full bg-primary-500/20 blur-3xl" />
+        <div className="absolute -bottom-44 -right-44 w-[520px] h-[520px] rounded-full bg-white/10 blur-3xl" />
       </div>
 
       {/* Navigation */}
-      <nav className="glass-card m-4 p-4 relative z-10">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="flex items-center space-x-3 cursor-pointer group" onClick={() => router.push('/')}>
-            <Shield className="w-8 h-8 text-primary-400 group-hover:scale-110 transition-transform duration-300" />
-            <h1 className="text-2xl font-bold text-gradient">KYC/KYB Platform</h1>
-          </div>
+      <nav className="relative z-10 border-b border-white/10 bg-[#0b0c10]/80 backdrop-blur supports-[backdrop-filter]:bg-[#0b0c10]/60">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+          <button className="flex items-center gap-3" onClick={() => router.push('/')}
+            aria-label="Home">
+            <div className="h-9 w-9 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center">
+              <Shield className="w-5 h-5 text-primary-400" />
+            </div>
+            <div className="leading-tight text-left">
+              <div className="text-xs uppercase tracking-widest text-white/50">Identity & Signing</div>
+              <div className="text-lg font-semibold tracking-tight text-white">KYC/KYB Platform</div>
+            </div>
+          </button>
         </div>
       </nav>
 
@@ -100,10 +105,10 @@ export default function AuthPage() {
       <div className="flex-1 flex items-center justify-center px-4 py-12 relative z-10">
         <div className="w-full max-w-md">
           <div className="text-center mb-8 animate-fade-in">
-            <h2 className="text-4xl md:text-5xl font-bold text-gradient mb-4">
+            <h2 className="font-['Space_Grotesk'] text-4xl md:text-5xl font-semibold tracking-tight text-white mb-4">
               {isLogin ? 'Welcome Back' : 'Create Account'}
             </h2>
-            <p className="text-gray-300 text-lg">
+            <p className="text-white/70 text-lg">
               {isLogin
                 ? 'Sign in to access your identity dashboard'
                 : 'Start your journey with secure identity verification'}
@@ -112,9 +117,9 @@ export default function AuthPage() {
 
           <div className="glass-card p-8 animate-slide-up">
             {/* Tabs */}
-            <div className="flex p-1 bg-white/5 rounded-xl mb-8 relative">
+            <div className="flex p-1 bg-white/[0.03] border border-white/10 rounded-full mb-8 relative">
               <div
-                className={`absolute inset-y-1 w-1/2 bg-white/10 rounded-lg transition-all duration-300 ease-out ${isLogin ? 'left-1' : 'left-[calc(50%-4px)] translate-x-1'
+                className={`absolute inset-y-1 w-1/2 bg-white/[0.06] border border-white/10 rounded-full transition-all duration-300 ease-out ${isLogin ? 'left-1' : 'left-[calc(50%-4px)] translate-x-1'
                   }`}
               ></div>
               <button
@@ -150,7 +155,7 @@ export default function AuthPage() {
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder="John Doe"
-                      className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/20 transition-all"
+                      className="input-field pl-11"
                     />
                   </div>
                 </div>
@@ -169,7 +174,7 @@ export default function AuthPage() {
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@example.com"
                     required
-                    className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/20 transition-all"
+                    className="input-field pl-11"
                   />
                 </div>
               </div>
@@ -188,7 +193,7 @@ export default function AuthPage() {
                     placeholder="••••••••"
                     required
                     minLength={6}
-                    className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/20 transition-all"
+                    className="input-field pl-11"
                   />
                 </div>
                 {!isLogin && (

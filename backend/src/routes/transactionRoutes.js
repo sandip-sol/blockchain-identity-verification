@@ -1,3 +1,4 @@
+const logger = require('../services/logger');
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
@@ -81,7 +82,7 @@ router.post('/tokenize', upload.single('document'), async (req, res) => {
             blockNumber: result.blockNumber
         });
     } catch (error) {
-        console.error('Transaction tokenization error:', error);
+        logger.error('Transaction tokenization error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -162,7 +163,7 @@ router.post('/batch-tokenize', async (req, res) => {
             blockNumber: onchain.blockNumber
         });
     } catch (error) {
-        console.error('Batch tokenization error:', error);
+        logger.error('Batch tokenization error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -191,7 +192,7 @@ router.post('/verify', async (req, res) => {
 
         res.status(200).json({ exists, tokenId, isValid });
     } catch (error) {
-        console.error('Transaction verification error:', error);
+        logger.error('Transaction verification error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -216,7 +217,7 @@ router.get('/history/:address', async (req, res) => {
             transactions: user.transactionTokens
         });
     } catch (error) {
-        console.error('Transaction history error:', error);
+        logger.error('Transaction history error:', error);
         res.status(500).json({ error: error.message });
     }
 });
