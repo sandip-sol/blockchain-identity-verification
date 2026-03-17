@@ -48,6 +48,13 @@ export function AuthProvider({ children }) {
         if (newAccount) window.localStorage.setItem('kyc_account', JSON.stringify(newAccount));
       }
     },
+    setAccountData: (nextAccount) => {
+      setAccount(nextAccount);
+      if (typeof window !== 'undefined') {
+        if (nextAccount) window.localStorage.setItem('kyc_account', JSON.stringify(nextAccount));
+        else window.localStorage.removeItem('kyc_account');
+      }
+    },
     logout: () => {
       setToken(null);
       setAccount(null);

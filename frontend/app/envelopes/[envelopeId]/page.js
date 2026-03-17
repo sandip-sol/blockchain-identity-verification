@@ -12,16 +12,15 @@ import {
     Clock,
     ArrowLeft,
     ArrowRight,
-    ShieldCheck,
     AlertTriangle,
     Download,
-    Stamp,
     Search,
+    ShieldCheck,
 } from 'lucide-react';
 
 import Navbar from '../../../components/Navbar';
 import Card, { CardContent, CardHeader } from '../../../components/Card';
-import StatusBadge from '../../../components/StatusBadge';
+import { CompactAuditTrail, ProofDetailsGrid, ProofHero } from '../../../components/ProofPanels';
 import { useAPI } from '../../../hooks/useAPI';
 import { formatTimestamp } from '../../../utils/proof';
 
@@ -221,7 +220,7 @@ export default function EnvelopeDetailsPage() {
                                 <div className="grid md:grid-cols-3 gap-4">
                                     <div className="rounded-lg border border-white/10 bg-white/5 p-4">
                                         <p className="text-gray-400 text-sm">Next action</p>
-                                        <p className="text-white font-medium mt-1">{env.nextAction}</p>
+                                        <p className="text-white font-medium mt-1 break-all leading-6">{env.nextAction}</p>
                                     </div>
                                     <div className="rounded-lg border border-white/10 bg-white/5 p-4">
                                         <p className="text-gray-400 text-sm">Signer progress</p>
@@ -313,66 +312,42 @@ export default function EnvelopeDetailsPage() {
                             <Card>
                                 <CardHeader title="Proof of Signature" subtitle="Visible trust metadata generated for the final signed PDF" />
                                 <CardContent>
-                                    <div className="rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-white/[0.03] to-blue-500/10 p-5">
-                                        <div className="flex items-start justify-between gap-4 flex-wrap">
-                                            <div>
-                                                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-sm text-emerald-200">
-                                                    <Stamp className="w-4 h-4" />
-                                                    {proofSummary?.label || 'Digitally Signed'}
-                                                </div>
-                                                <p className="mt-3 text-xl font-semibold text-white">{proofSummary?.signerDisplayName || '-'}</p>
-                                                <p className="text-sm text-gray-400">{proofSummary?.verificationStatusText || 'Verification metadata available'}</p>
-                                            </div>
-                                            <StatusBadge status={env.status === 'COMPLETED' ? 'finalized' : 'signed'} />
-                                        </div>
+                                    <ProofHero
+                                        title={proofSummary?.label || 'Digitally Signed'}
+                                        signer={proofSummary?.signerDisplayName}
+                                        signerAddress={auditTrail?.signerWalletAddress || proofSummary?.signerAddress}
+                                        signedAt={formatTimestamp(proofSummary?.signedAt)}
+                                        signedStatus={env.status === 'COMPLETED' ? 'Signed' : env.status}
+                                        anchorStatus={verifyData?.anchor?.status === 'VERIFIED' ? 'Anchor Verified' : (proofSummary?.transactionHash ? 'Anchor Pending' : 'Anchor Pending')}
+                                        actions={(
+                                            <>
+                                                <Link
+                                                    href={`/verify?envelopeId=${encodeURIComponent(envelopeId)}`}
+                                                    className="primary-button inline-flex items-center gap-2"
+                                                >
+                                                    View Proof
+                                                </Link>
+                                                {proof?.verificationUrl ? (
+                                                    <Link href={proof.verificationUrl} className="secondary-button inline-flex items-center gap-2">
+                                                        Verification Link
+                                                    </Link>
+                                                ) : null}
+                                            </>
+                                        )}
+                                    />
 
-                                        <div className="mt-5 grid md:grid-cols-2 gap-4 text-sm">
-                                            <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-                                                <p className="text-gray-400">Signed at</p>
-                                                <p className="mt-1 text-white">{formatTimestamp(proofSummary?.signedAt)}</p>
-                                            </div>
-                                            <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-                                                <p className="text-gray-400">Blockchain network</p>
-                                                <p className="mt-1 text-white">{proofSummary?.blockchainNetwork || '-'}</p>
-                                            </div>
-                                            <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-                                                <p className="text-gray-400">Document hash</p>
-                                                <p className="mt-1 text-white break-all">{proofSummary?.documentHash || '-'}</p>
-                                            </div>
-                                            <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-                                                <p className="text-gray-400">Transaction hash</p>
-                                                <p className="mt-1 text-white break-all">{proofSummary?.transactionHash || 'Pending blockchain anchor'}</p>
-                                            </div>
-                                        </div>
+                                    <ProofDetailsGrid
+                                        summary={{
+                                            ...proofSummary,
+                                            finalPdfHash: proof?.rendered?.finalHash,
+                                        }}
+                                        auditTrail={auditTrail}
+                                        verificationUrl={proof?.verificationUrl}
+                                        explorerUrl={null}
+                                        anchorStatus={verifyData?.anchor?.status === 'VERIFIED' ? 'Verified' : (proofSummary?.transactionHash ? 'Pending confirmation' : 'Pending')}
+                                    />
 
-                                        <div className="mt-4 flex flex-wrap gap-3">
-                                            <Link
-                                                href={`/verify?envelopeId=${encodeURIComponent(envelopeId)}`}
-                                                className="primary-button inline-flex items-center gap-2"
-                                            >
-                                                <ShieldCheck className="w-5 h-5" /> View Proof
-                                            </Link>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid md:grid-cols-2 gap-4 text-sm mt-4">
-                                        <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                                            <p className="text-gray-400">Agreement ID</p>
-                                            <p className="text-white mt-1 break-all">{proofSummary?.agreementId || '-'}</p>
-                                        </div>
-                                        <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                                            <p className="text-gray-400">Verification URL</p>
-                                            <p className="text-white mt-1 break-all">{proof?.verificationUrl || '-'}</p>
-                                        </div>
-                                        <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                                            <p className="text-gray-400">Audit final status</p>
-                                            <p className="text-white mt-1">{auditTrail?.finalStatus || '-'}</p>
-                                        </div>
-                                        <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                                            <p className="text-gray-400">Signer wallet</p>
-                                            <p className="text-white mt-1 break-all">{auditTrail?.signerWalletAddress || '-'}</p>
-                                        </div>
-                                    </div>
+                                    <CompactAuditTrail auditTrail={auditTrail} />
                                 </CardContent>
                             </Card>
                         )}

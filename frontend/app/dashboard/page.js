@@ -3,19 +3,21 @@
 import { useEffect, useState } from 'react';
 import { useAccount } from 'wagmi';
 import { useRouter } from 'next/navigation';
-import { Shield, FileCheck, Wallet, AlertCircle, ExternalLink, FileSignature, Activity } from 'lucide-react';
+import { Shield, FileCheck, Wallet, AlertCircle, FileSignature, Activity, Upload, Trash2, CheckCircle2 } from 'lucide-react';
 import Navbar from '../../components/Navbar';
-import Card, { CardHeader, CardContent, CardFooter } from '../../components/Card';
+import Card, { CardHeader, CardContent } from '../../components/Card';
 import StatusBadge from '../../components/StatusBadge';
 // TransactionTable removed; dashboard now shows consolidated activity feed (tx hashes + signing proofs)
 import { useKYC } from '../../hooks/useKYC';
 import { useAPI } from '../../hooks/useAPI';
+import { useAuth } from '../../context/AuthContext';
 
 export default function Dashboard() {
     const { address, isConnected } = useAccount();
     const router = useRouter();
     const { getIdentityToken, checkStatus, isVerified } = useKYC();
     const api = useAPI();
+    const { account, setAccountData } = useAuth();
 
     const [identityToken, setIdentityToken] = useState(null);
     const [userStatus, setUserStatus] = useState(null);
@@ -24,6 +26,7 @@ export default function Dashboard() {
     const [activities, setActivities] = useState([]);
     const [txProofCount, setTxProofCount] = useState(0);
     const [ownedEnvelopes, setOwnedEnvelopes] = useState([]);
+    const [signatureBusy, setSignatureBusy] = useState(false);
 
     useEffect(() => {
         if (!isConnected) {
@@ -67,10 +70,61 @@ export default function Dashboard() {
                     setOwnedEnvelopes(envelopeResp.value.owned || []);
                 }
             }
+
+            const meResp = await api.get('/api/auth/me').catch(() => null);
+            if (meResp?.account) {
+                setAccountData(meResp.account);
+            }
         } catch (error) {
             console.error('Error loading dashboard data:', error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const onUploadSignature = async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        if (file.type !== 'image/png') {
+            alert('Please upload a PNG signature image.');
+            event.target.value = '';
+            return;
+        }
+
+        setSignatureBusy(true);
+        try {
+            const base64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const result = String(reader.result || '');
+                    resolve(result.includes(',') ? result.split(',')[1] : result);
+                };
+                reader.onerror = () => reject(reader.error || new Error('Failed to read signature image'));
+                reader.readAsDataURL(file);
+            });
+
+            const resp = await api.post('/api/auth/signature', {
+                signatureImageBase64: base64,
+            });
+            if (resp?.account) setAccountData(resp.account);
+        } catch (error) {
+            alert(error?.response?.data?.error || error.message || 'Failed to upload account signature');
+        } finally {
+            setSignatureBusy(false);
+            event.target.value = '';
+        }
+    };
+
+    const onRemoveSignature = async () => {
+        setSignatureBusy(true);
+        try {
+            const resp = await api.delete('/api/auth/signature');
+            if (resp?.account) setAccountData(resp.account);
+        } catch (error) {
+            alert(error?.response?.data?.error || error.message || 'Failed to remove account signature');
+        } finally {
+            setSignatureBusy(false);
         }
     };
 
@@ -262,6 +316,70 @@ export default function Dashboard() {
                                             <button onClick={() => router.push('/envelopes')} className="secondary-button w-full">View all envelopes</button>
                                         </div>
                                     )}
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader
+                                    title="Account Signature"
+                                    subtitle="Upload once and it will be attached automatically when this account signs documents"
+                                />
+                                <CardContent>
+                                    <div className="space-y-4">
+                                        <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+                                            <div className="flex items-start justify-between gap-4 flex-wrap">
+                                                <div>
+                                                    <p className="font-medium text-white">
+                                                        {account?.signatureAsset?.hasSignature ? 'Reusable signature on file' : 'No reusable signature uploaded'}
+                                                    </p>
+                                                    <p className="text-sm text-gray-400 mt-1">
+                                                        The signature is stored against your authenticated account and locked to your linked wallet.
+                                                    </p>
+                                                    {account?.signatureAsset?.hasSignature && (
+                                                        <div className="mt-3 text-xs text-gray-400 space-y-1">
+                                                            <p>Uploaded: <span className="text-gray-200">{account.signatureAsset.uploadedAt ? new Date(account.signatureAsset.uploadedAt).toLocaleString() : '-'}</span></p>
+                                                            <p>Wallet: <span className="font-mono text-gray-200 break-all">{account.signatureAsset.walletAddress || '-'}</span></p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {account?.signatureAsset?.hasSignature && (
+                                                    <div className="inline-flex items-center gap-2 rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1.5 text-sm text-green-300">
+                                                        <CheckCircle2 className="w-4 h-4" />
+                                                        Ready for signing
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-3">
+                                            <label className="secondary-button inline-flex items-center gap-2 cursor-pointer">
+                                                <Upload className="w-4 h-4" />
+                                                {signatureBusy ? 'Working...' : 'Upload PNG Signature'}
+                                                <input
+                                                    type="file"
+                                                    accept="image/png"
+                                                    className="hidden"
+                                                    disabled={signatureBusy}
+                                                    onChange={onUploadSignature}
+                                                />
+                                            </label>
+                                            {account?.signatureAsset?.hasSignature && (
+                                                <button
+                                                    type="button"
+                                                    onClick={onRemoveSignature}
+                                                    disabled={signatureBusy}
+                                                    className="secondary-button inline-flex items-center gap-2"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                    Remove Signature
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <p className="text-xs text-gray-400">
+                                            Security checks: authentication required, linked-wallet required, PNG-only validation, strict size limits, dimension checks, wallet binding, and automatic invalidation if the linked wallet changes.
+                                        </p>
+                                    </div>
                                 </CardContent>
                             </Card>
 

@@ -5,11 +5,10 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useAccount, useSignTypedData } from 'wagmi';
 import { toast } from 'react-toastify';
-import { ArrowLeft, FileText, PenLine, Send, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, FileText, PenLine, Send, ShieldCheck, AlertTriangle, Upload, CheckCircle2 } from 'lucide-react';
 
 import Navbar from '../../../../components/Navbar';
 import Card, { CardContent, CardHeader } from '../../../../components/Card';
-import SignaturePad from '../../../../components/SignaturePad';
 import { useAPI } from '../../../../hooks/useAPI';
 import { useAuth } from '../../../../context/AuthContext';
 
@@ -32,7 +31,7 @@ function signerStateCopy(recipient) {
 
 export default function SignEnvelopePage() {
     const api = useAPI();
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, account, setAccountData } = useAuth();
     const params = useParams();
     const search = useSearchParams();
     const envelopeId = params?.envelopeId;
@@ -43,9 +42,9 @@ export default function SignEnvelopePage() {
 
     const [envData, setEnvData] = useState(null);
     const [typed, setTyped] = useState(null);
-    const [sigBase64, setSigBase64] = useState(null);
     const [loading, setLoading] = useState(false);
     const [docLoading, setDocLoading] = useState(false);
+    const [signatureUploading, setSignatureUploading] = useState(false);
 
     const recipientAddress = useMemo(() => {
         return (recipientFromQuery || address || '').toLowerCase();
@@ -68,6 +67,18 @@ export default function SignEnvelopePage() {
             }
         })();
     }, [envelopeId, isAuthenticated]);
+
+    useEffect(() => {
+        if (!isAuthenticated) return;
+        (async () => {
+            try {
+                const resp = await api.get('/api/auth/me');
+                if (resp?.account) setAccountData(resp.account);
+            } catch (_) {
+                // Keep current account snapshot if profile refresh fails.
+            }
+        })();
+    }, [isAuthenticated]);
 
     useEffect(() => {
         if (!envelopeId || !recipientAddress || !isAuthenticated) return;
@@ -136,7 +147,6 @@ export default function SignEnvelopePage() {
             await api.post(`/api/envelopes/${envelopeId}/sign`, {
                 recipientAddress: address,
                 signature,
-                signatureImageBase64: sigBase64 || undefined,
                 placement: {
                     pageIndex: 0,
                     x: 50,
@@ -153,6 +163,41 @@ export default function SignEnvelopePage() {
             toast.error(e?.response?.data?.error || e.message || 'Signing failed');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const onUploadSignature = async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        if (file.type !== 'image/png') {
+            toast.error('Upload a PNG signature image');
+            event.target.value = '';
+            return;
+        }
+
+        setSignatureUploading(true);
+        try {
+            const base64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const result = String(reader.result || '');
+                    resolve(result.includes(',') ? result.split(',')[1] : result);
+                };
+                reader.onerror = () => reject(reader.error || new Error('Failed to read signature image'));
+                reader.readAsDataURL(file);
+            });
+
+            const resp = await api.post('/api/auth/signature', {
+                signatureImageBase64: base64,
+            });
+            if (resp?.account) setAccountData(resp.account);
+            toast.success('Reusable account signature uploaded');
+        } catch (e) {
+            toast.error(e?.response?.data?.error || e.message || 'Failed to upload signature');
+        } finally {
+            setSignatureUploading(false);
+            event.target.value = '';
         }
     };
 
@@ -203,7 +248,7 @@ export default function SignEnvelopePage() {
                                     <div className="flex items-start gap-2">
                                         <ShieldCheck className="w-4 h-4 mt-0.5" />
                                         <p>
-                                            Your wallet signature approves the canonical source document hash. The optional drawn signature only affects the rendered PDF appearance.
+                                            Your wallet signature approves the canonical source document hash. If your account has a stored signature image, the backend attaches that approved image to the rendered PDF automatically.
                                         </p>
                                     </div>
                                 </div>
@@ -256,12 +301,46 @@ export default function SignEnvelopePage() {
                         </Card>
 
                         <Card>
-                            <CardHeader title="Visual Signature" subtitle="Optional: draw a signature to stamp onto the rendered PDF" />
+                            <CardHeader title="Stored Signature" subtitle="Your account-level signature image is attached automatically when available" />
                             <CardContent>
-                                <SignaturePad onChange={setSigBase64} />
-                                <p className="text-xs text-gray-400 mt-2">
-                                    Leave this blank if you only want the wallet signature proof.
-                                </p>
+                                <div className="rounded-lg border border-white/10 bg-white/5 p-4 space-y-3">
+                                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                                        <div>
+                                            <p className="text-white font-medium">
+                                                {account?.signatureAsset?.hasSignature ? 'Signature on file' : 'No signature uploaded'}
+                                            </p>
+                                            <p className="text-sm text-gray-400 mt-1">
+                                                Only the authenticated account owner can upload it, and it is locked to the linked wallet address.
+                                            </p>
+                                            {account?.signatureAsset?.hasSignature && (
+                                                <p className="text-xs text-gray-400 mt-2">
+                                                    Uploaded: {account.signatureAsset.uploadedAt ? new Date(account.signatureAsset.uploadedAt).toLocaleString() : '-'}
+                                                </p>
+                                            )}
+                                        </div>
+                                        {account?.signatureAsset?.hasSignature ? (
+                                            <div className="inline-flex items-center gap-2 rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1.5 text-sm text-green-300">
+                                                <CheckCircle2 className="w-4 h-4" />
+                                                Ready to attach
+                                            </div>
+                                        ) : null}
+                                    </div>
+
+                                    <label className="secondary-button inline-flex items-center gap-2 cursor-pointer w-fit">
+                                        <Upload className="w-4 h-4" />
+                                        {signatureUploading ? 'Uploading...' : 'Upload Account Signature'}
+                                        <input
+                                            type="file"
+                                            accept="image/png"
+                                            className="hidden"
+                                            disabled={signatureUploading}
+                                            onChange={onUploadSignature}
+                                        />
+                                    </label>
+                                    <p className="text-xs text-gray-400">
+                                        Use a clean PNG only. The backend enforces file type, size, and image-dimension checks before storing it.
+                                    </p>
+                                </div>
                             </CardContent>
                         </Card>
 

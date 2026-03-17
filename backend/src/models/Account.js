@@ -12,6 +12,15 @@ const AccountSchema = new mongoose.Schema(
     name: { type: String, trim: true },
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
     address: { type: String, index: true, sparse: true }, // Wallet address, linked later
+    signatureAsset: {
+      cid: { type: String },
+      hash: { type: String },
+      contentType: { type: String },
+      width: { type: Number },
+      height: { type: Number },
+      uploadedAt: { type: Date },
+      walletAddress: { type: String },
+    },
     createdAt: { type: Date, default: Date.now },
     lastLoginAt: { type: Date }
   },

@@ -11,7 +11,7 @@ const Recipient = require('../models/Recipient');
 const EnvelopeAuditLog = require('../models/EnvelopeAuditLog');
 const ipfsService = require('../services/ipfsService');
 const web3Service = require('../services/web3Service');
-const { stampSignature, addProofPages } = require('../services/pdfService');
+const { addProofPages } = require('../services/pdfService');
 const {
   resolveEnvelopeAccess,
   canAccessEnvelope,
@@ -44,7 +44,6 @@ const signLimiter = rateLimit({
 });
 
 const MAX_PDF_BYTES = 8 * 1024 * 1024;
-const MAX_SIGNATURE_IMAGE_BYTES = 1024 * 1024;
 const MAX_RECIPIENTS = 25;
 const MAX_TITLE_LENGTH = 150;
 const MAX_DESCRIPTION_LENGTH = 500;
@@ -85,7 +84,6 @@ const sendSchema = Joi.object({
 const signSchema = Joi.object({
   recipientAddress: Joi.string().required(),
   signature: Joi.string().trim().required(),
-  signatureImageBase64: Joi.string().trim().optional(),
   placement: Joi.object({
     pageIndex: Joi.number().integer().min(0).max(999).default(0),
     x: Joi.number().min(0).max(2000).default(50),
@@ -126,19 +124,6 @@ function parsePdfBase64(pdfBase64) {
   }
   if (bytes.slice(0, 4).toString('utf8') !== '%PDF') {
     throw new Error('Uploaded file must be a valid PDF');
-  }
-  return bytes;
-}
-
-function parseSignaturePng(signatureImageBase64) {
-  if (!signatureImageBase64) return null;
-  const bytes = Buffer.from(signatureImageBase64, 'base64');
-  if (!bytes.length || bytes.length > MAX_SIGNATURE_IMAGE_BYTES) {
-    throw new Error(`Signature image must be between 1 byte and ${MAX_SIGNATURE_IMAGE_BYTES} bytes`);
-  }
-  const pngHeader = bytes.subarray(0, 8).toString('hex');
-  if (pngHeader !== '89504e470d0a1a0a') {
-    throw new Error('Signature image must be a PNG');
   }
   return bytes;
 }
@@ -894,26 +879,28 @@ router.post('/:envelopeId/sign', signLimiter, async (req, res) => {
       : await ipfsService.retrieveRaw(env.documentOriginalCID);
     updatedPdfBytes = Buffer.from(updatedPdfBytes);
 
-    const signatureImageBytes = parseSignaturePng(value.signatureImageBase64);
+    const signerAccount = await Account.findById(req.user.sub);
+    if (!signerAccount) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+    if (!signerAccount.address || normalizeAddress(signerAccount.address) !== normalizeAddress(checksumAddress)) {
+      return res.status(403).json({ error: 'The linked wallet on your account must match the signing wallet' });
+    }
+
+    let signatureImageBytes = null;
     let signatureImageCID;
     let signatureImageHash;
-    const identityTokenId = await web3Service.getIdentityTokenId(checksumAddress);
-    if (signatureImageBytes) {
+    if (signerAccount.signatureAsset?.cid) {
+      if (normalizeAddress(signerAccount.signatureAsset.walletAddress) !== normalizeAddress(checksumAddress)) {
+        return res.status(403).json({ error: 'Stored signature is locked to a different wallet address' });
+      }
+
+      signatureImageBytes = await ipfsService.retrieveRaw(signerAccount.signatureAsset.cid);
       signatureImageHash = sha256Hex(signatureImageBytes);
-      signatureImageCID = await ipfsService.uploadRaw(signatureImageBytes, `signature-${env.envelopeId}-${checksumAddress}.png`);
-      updatedPdfBytes = await stampSignature({
-        pdfBytes: updatedPdfBytes,
-        signaturePngBytes: signatureImageBytes,
-        pageIndex: Number(value.placement?.pageIndex || 0),
-        x: Number(value.placement?.x || 50),
-        y: Number(value.placement?.y || 50),
-        width: Number(value.placement?.width || 160),
-        height: Number(value.placement?.height || 60),
-        labelText: identityTokenId
-          ? `DID: ${identityTokenId} · Signed: ${new Date().toISOString()}`
-          : `Signed: ${new Date().toISOString()}`,
-      });
+      signatureImageCID = signerAccount.signatureAsset.cid;
     }
+
+    const identityTokenId = await web3Service.getIdentityTokenId(checksumAddress);
 
     const typedDataHash = ethers.TypedDataEncoder.hash(typed.domain, typed.types, typed.message);
     let newFinalHash = sha256Hex(updatedPdfBytes);
@@ -1000,6 +987,7 @@ router.post('/:envelopeId/sign', signLimiter, async (req, res) => {
         proofBlock,
         auditTrail,
         qrPngBytes,
+        signaturePngBytes: signatureImageBytes,
       });
       newFinalHash = sha256Hex(proofPdfBytes);
       newFinalCID = await ipfsService.uploadRaw(proofPdfBytes, `envelope-${env.envelopeId}-signed-proof.pdf`);

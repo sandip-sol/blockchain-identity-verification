@@ -1,13 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Search, CheckCircle, XCircle, Upload, ExternalLink, ShieldCheck, FileWarning } from 'lucide-react';
+import { Search, CheckCircle, XCircle, Upload, ShieldCheck, FileWarning } from 'lucide-react';
 
 import Navbar from '../../components/Navbar';
 import Card, { CardHeader, CardContent } from '../../components/Card';
 import StatusBadge from '../../components/StatusBadge';
+import { CompactAuditTrail, ProofDetailsGrid, ProofHero, VerificationChecksCard } from '../../components/ProofPanels';
 import { useKYC } from '../../hooks/useKYC';
 import { useAPI } from '../../hooks/useAPI';
 import { formatTimestamp, statusToBadge } from '../../utils/proof';
@@ -172,88 +172,65 @@ export default function VerifyPage() {
                         <Card>
                             <CardHeader title="Document Verification Result" />
                             <CardContent>
-                                <div className={`flex items-center justify-between p-5 rounded-xl border ${docResult.success ? 'border-green-500/40 bg-green-500/10' : 'border-red-500/40 bg-red-500/10'}`}>
-                                    <div className="flex items-center gap-4">
-                                        {docResult.success ? (
-                                            <CheckCircle className="w-12 h-12 text-green-400" />
-                                        ) : (
-                                            <FileWarning className="w-12 h-12 text-red-300" />
-                                        )}
-                                        <div>
-                                            <h3 className="text-xl font-bold text-white">
-                                                {docResult.success ? 'Authentic signature proof confirmed' : 'Verification failed'}
-                                            </h3>
-                                            <p className="text-sm text-gray-300 mt-1">
-                                                {docResult.success
-                                                    ? 'The agreement status, signer set, on-chain record, and PDF integrity all line up.'
-                                                    : 'One or more proof checks failed. Review the detailed checks below.'}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <StatusBadge status={statusToBadge(docResult)} size="lg" />
-                                </div>
+                                <ProofHero
+                                    title={docResult.success ? 'Digitally Signed' : 'Verification Review'}
+                                    signer={docResult.proof?.signer}
+                                    signerAddress={docResult.proof?.signerAddress}
+                                    signedAt={formatTimestamp(docResult.proof?.signedTimestamp)}
+                                    signedStatus={docResult.proof?.finalStatus || (docResult.success ? 'Signed' : 'Review required')}
+                                    anchorStatus={docResult.success ? 'Anchor Verified' : (docResult.proof?.transactionHash ? 'Anchor Pending' : 'Verification Failed')}
+                                    actions={<StatusBadge status={statusToBadge(docResult)} size="lg" />}
+                                />
 
-                                <div className="grid md:grid-cols-2 gap-4 mt-5 text-sm">
-                                    <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                                        <p className="text-gray-400">Signer</p>
-                                        <p className="mt-1 text-white break-all">{docResult.proof?.signer || '-'}</p>
-                                    </div>
-                                    <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                                        <p className="text-gray-400">Signed timestamp</p>
-                                        <p className="mt-1 text-white">{formatTimestamp(docResult.proof?.signedTimestamp)}</p>
-                                    </div>
-                                    <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                                        <p className="text-gray-400">Document hash</p>
-                                        <p className="mt-1 text-white break-all">{docResult.proof?.documentHash || '-'}</p>
-                                    </div>
-                                    <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                                        <p className="text-gray-400">Final PDF hash</p>
-                                        <p className="mt-1 text-white break-all">{docResult.proof?.finalPdfHash || '-'}</p>
-                                    </div>
-                                    <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                                        <p className="text-gray-400">Transaction hash</p>
-                                        <p className="mt-1 text-white break-all">{docResult.proof?.transactionHash || '-'}</p>
-                                    </div>
-                                    <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                                        <p className="text-gray-400">Network / status</p>
-                                        <p className="mt-1 text-white">{docResult.proof?.network || '-'} · {docResult.proof?.finalStatus || '-'}</p>
-                                    </div>
+                                <div className="mt-4">
+                                    <ProofDetailsGrid
+                                        summary={{
+                                            signer: docResult.proof?.signer,
+                                            signerAddress: docResult.proof?.signerAddress,
+                                            signedTimestamp: formatTimestamp(docResult.proof?.signedTimestamp),
+                                            documentHash: docResult.proof?.documentHash,
+                                            finalPdfHash: docResult.proof?.finalPdfHash,
+                                            transactionHash: docResult.proof?.transactionHash,
+                                            network: docResult.proof?.network,
+                                            agreementId: docResult.proof?.agreementId,
+                                            finalStatus: docResult.proof?.finalStatus,
+                                        }}
+                                        auditTrail={{
+                                            signerSignedAt: formatTimestamp(docResult.proof?.signedTimestamp),
+                                            signerWalletAddress: docResult.proof?.signerAddress,
+                                            agreementId: docResult.proof?.agreementId,
+                                            finalStatus: docResult.proof?.finalStatus,
+                                        }}
+                                        verificationUrl={docResult.proof?.verificationUrl}
+                                        explorerUrl={docResult.proof?.explorerUrl}
+                                        anchorStatus={docResult.success ? 'Verified' : (docResult.proof?.transactionHash ? 'Pending confirmation' : 'Failed')}
+                                    />
                                 </div>
                             </CardContent>
                         </Card>
 
-                        <Card>
-                            <CardHeader title="Verification Checks" />
-                            <CardContent>
-                                <div className="space-y-3">
-                                    {[
-                                        ['Uploaded PDF hash matches stored final hash', docResult.checks?.uploadedFinalPdfHashMatches],
-                                        ['Canonical hash matches blockchain anchor', docResult.checks?.canonicalHashMatchesAnchor],
-                                        ['Signer address matches recorded signer set', docResult.checks?.signerAddressMatchesRecordedSigner],
-                                        ['Anchor transaction exists', docResult.checks?.txHashExists],
-                                        ['Agreement is finalized', docResult.checks?.agreementStatusFinalized],
-                                    ].map(([label, passed]) => (
-                                        <div key={label} className="rounded-lg border border-white/10 bg-white/5 p-4 flex items-center justify-between gap-4">
-                                            <p className="text-sm text-gray-200">{label}</p>
-                                            <StatusBadge
-                                                status={passed === true ? 'verified' : passed === false ? 'rejected' : 'pending'}
-                                                size="sm"
-                                            />
-                                        </div>
-                                    ))}
-                                </div>
-
-                                <div className="mt-4 rounded-lg border border-white/10 bg-white/5 p-4 text-sm space-y-2">
-                                    <p className="text-gray-400">Agreement ID</p>
-                                    <p className="text-white break-all">{docResult.proof?.agreementId || '-'}</p>
-                                    {docResult.proof?.explorerUrl && (
-                                        <Link href={docResult.proof.explorerUrl} target="_blank" className="text-primary-300 hover:text-primary-200 inline-flex items-center gap-2">
-                                            <ExternalLink className="w-4 h-4" /> View on explorer
-                                        </Link>
-                                    )}
-                                </div>
-                            </CardContent>
-                        </Card>
+                        <div className="space-y-4">
+                            <VerificationChecksCard
+                                checks={[
+                                    ['Uploaded PDF hash matches stored final hash', docResult.checks?.uploadedFinalPdfHashMatches],
+                                    ['Canonical hash matches blockchain anchor', docResult.checks?.canonicalHashMatchesAnchor],
+                                    ['Signer address matches recorded signer set', docResult.checks?.signerAddressMatchesRecordedSigner],
+                                    ['Anchor transaction exists', docResult.checks?.txHashExists],
+                                    ['Agreement is finalized', docResult.checks?.agreementStatusFinalized],
+                                ]}
+                            />
+                            <CompactAuditTrail
+                                auditTrail={{
+                                    signerSignedAt: formatTimestamp(docResult.proof?.signedTimestamp),
+                                    signerWalletAddress: docResult.proof?.signerAddress,
+                                    documentHash: docResult.proof?.documentHash,
+                                    transactionHash: docResult.proof?.transactionHash,
+                                    chain: docResult.proof?.network,
+                                    agreementId: docResult.proof?.agreementId,
+                                    finalStatus: docResult.proof?.finalStatus,
+                                }}
+                            />
+                        </div>
                     </div>
                 )}
 

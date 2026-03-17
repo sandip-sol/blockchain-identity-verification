@@ -1,5 +1,9 @@
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 
+const PROOF_BLOCK_MARGIN = 38;
+const PROOF_BLOCK_HEIGHT = 198;
+const PROOF_BLOCK_MIN_CONTENT_TOP = 240;
+
 function drawKeyValueRows(page, rows, { x, startY, width, font, boldFont, rowGap = 18, valueOffset = 130 }) {
   let cursorY = startY;
   rows.forEach(({ label, value }) => {
@@ -21,6 +25,15 @@ function drawKeyValueRows(page, rows, { x, startY, width, font, boldFont, rowGap
     });
 
     cursorY -= rowGap;
+  });
+}
+
+function drawDivider(page, { x, y, width }) {
+  page.drawLine({
+    start: { x, y },
+    end: { x: x + width, y },
+    thickness: 1,
+    color: rgb(0.87, 0.9, 0.95),
   });
 }
 
@@ -71,6 +84,7 @@ async function addProofPages({
   proofBlock,
   auditTrail,
   qrPngBytes,
+  signaturePngBytes,
 }) {
   const pdfDoc = await PDFDocument.load(pdfBytes);
   const pages = pdfDoc.getPages();
@@ -78,48 +92,144 @@ async function addProofPages({
 
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const lastPage = pages[pages.length - 1];
-  const { width } = lastPage.getSize();
+  const originalLastPage = pages[pages.length - 1];
+  const { width, height } = originalLastPage.getSize();
+
+  let proofPage = originalLastPage;
+  const proofBlockTop = PROOF_BLOCK_MARGIN + PROOF_BLOCK_HEIGHT;
+  if (height - proofBlockTop < PROOF_BLOCK_MIN_CONTENT_TOP) {
+    proofPage = pdfDoc.addPage([width, height]);
+    proofPage.drawRectangle({
+      x: 0,
+      y: 0,
+      width,
+      height,
+      color: rgb(1, 1, 1),
+    });
+  }
 
   const block = {
-    x: 38,
-    y: 38,
-    width: width - 76,
-    height: 150,
+    x: PROOF_BLOCK_MARGIN,
+    y: PROOF_BLOCK_MARGIN,
+    width: width - (PROOF_BLOCK_MARGIN * 2),
+    height: 220,
   };
 
-  lastPage.drawRectangle({
+  proofPage.drawRectangle({
     x: block.x,
     y: block.y,
     width: block.width,
     height: block.height,
     color: rgb(0.985, 0.989, 0.996),
-    borderColor: rgb(0.79, 0.84, 0.9),
+    borderColor: rgb(0.84, 0.88, 0.93),
     borderWidth: 1,
   });
 
-  lastPage.drawRectangle({
+  proofPage.drawRectangle({
     x: block.x,
-    y: block.y + block.height - 36,
+    y: block.y + block.height - 44,
     width: block.width,
-    height: 36,
-    color: rgb(0.08, 0.16, 0.29),
+    height: 44,
+    color: rgb(0.06, 0.11, 0.2),
   });
 
-  lastPage.drawText(proofBlock.label || 'Digitally Signed', {
-    x: block.x + 16,
-    y: block.y + block.height - 24,
-    size: 15,
+  proofPage.drawText(proofBlock.label || 'Digitally Signed', {
+    x: block.x + 18,
+    y: block.y + block.height - 28,
+    size: 16,
     font: boldFont,
     color: rgb(1, 1, 1),
   });
 
-  lastPage.drawText(proofBlock.verificationStatusText || 'Verifiable on blockchain', {
-    x: block.x + 170,
-    y: block.y + block.height - 22,
-    size: 10,
+  proofPage.drawText(proofBlock.verificationStatusText || 'Verifiable on blockchain', {
+    x: block.x + 18,
+    y: block.y + block.height - 40,
+    size: 8.5,
     font,
-    color: rgb(0.82, 0.9, 0.98),
+    color: rgb(0.8, 0.88, 0.96),
+  });
+
+  const statusBadge = {
+    width: 116,
+    height: 24,
+    x: block.x + block.width - 132,
+    y: block.y + block.height - 34,
+  };
+
+  proofPage.drawRectangle({
+    x: statusBadge.x,
+    y: statusBadge.y,
+    width: statusBadge.width,
+    height: statusBadge.height,
+    color: proofBlock.transactionHash ? rgb(0.13, 0.38, 0.28) : rgb(0.44, 0.32, 0.08),
+    borderColor: proofBlock.transactionHash ? rgb(0.27, 0.72, 0.48) : rgb(0.86, 0.67, 0.2),
+    borderWidth: 0.8,
+    borderRadius: 10,
+  });
+
+  proofPage.drawText(proofBlock.transactionHash ? 'ANCHOR VERIFIED' : 'ANCHOR PENDING', {
+    x: statusBadge.x + 11,
+    y: statusBadge.y + 8,
+    size: 8,
+    font: boldFont,
+    color: rgb(1, 1, 1),
+  });
+
+  const signaturePanel = {
+    x: block.x + 18,
+    y: block.y + 26,
+    width: 176,
+    height: 118,
+  };
+
+  proofPage.drawRectangle({
+    x: signaturePanel.x,
+    y: signaturePanel.y,
+    width: signaturePanel.width,
+    height: signaturePanel.height,
+    color: rgb(0.972, 0.978, 0.988),
+    borderColor: rgb(0.85, 0.88, 0.92),
+    borderWidth: 1,
+  });
+
+  proofPage.drawText('Signer Signature', {
+    x: signaturePanel.x + 12,
+    y: signaturePanel.y + signaturePanel.height - 18,
+    size: 8.5,
+    font: boldFont,
+    color: rgb(0.32, 0.38, 0.46),
+  });
+
+  if (signaturePngBytes) {
+    const signatureImage = await pdfDoc.embedPng(signaturePngBytes);
+    proofPage.drawImage(signatureImage, {
+      x: signaturePanel.x + 12,
+      y: signaturePanel.y + 34,
+      width: signaturePanel.width - 24,
+      height: 44,
+    });
+  } else {
+    proofPage.drawText('Wallet-signed with no uploaded image', {
+      x: signaturePanel.x + 12,
+      y: signaturePanel.y + 54,
+      size: 9,
+      font,
+      color: rgb(0.44, 0.48, 0.56),
+    });
+  }
+
+  proofPage.drawText('Protected by account-level signature storage', {
+    x: signaturePanel.x + 12,
+    y: signaturePanel.y + 12,
+    size: 7.5,
+    font,
+    color: rgb(0.5, 0.55, 0.62),
+  });
+
+  drawDivider(proofPage, {
+    x: signaturePanel.x + 12,
+    y: signaturePanel.y + 28,
+    width: signaturePanel.width - 24,
   });
 
   const proofRows = [
@@ -131,30 +241,30 @@ async function addProofPages({
     { label: 'Agreement ID', value: proofBlock.agreementId },
   ];
 
-  drawKeyValueRows(lastPage, proofRows, {
-    x: block.x + 16,
-    startY: block.y + block.height - 58,
-    width: block.width - 170,
+  drawKeyValueRows(proofPage, proofRows, {
+    x: block.x + 214,
+    startY: block.y + block.height - 70,
+    width: block.width - 350,
     font,
     boldFont,
-    rowGap: 17,
-    valueOffset: 96,
+    rowGap: 20,
+    valueOffset: 92,
   });
 
   if (qrPngBytes) {
     const qrImage = await pdfDoc.embedPng(qrPngBytes);
-    lastPage.drawImage(qrImage, {
-      x: block.x + block.width - 118,
-      y: block.y + 24,
-      width: 82,
-      height: 82,
+    proofPage.drawImage(qrImage, {
+      x: block.x + block.width - 116,
+      y: block.y + 30,
+      width: 76,
+      height: 76,
     });
   }
 
-  lastPage.drawText('Scan to verify', {
-    x: block.x + block.width - 112,
-    y: block.y + 10,
-    size: 9,
+  proofPage.drawText('Scan to verify', {
+    x: block.x + block.width - 110,
+    y: block.y + 16,
+    size: 8.5,
     font: boldFont,
     color: rgb(0.32, 0.38, 0.46),
   });
@@ -209,31 +319,6 @@ async function addProofPages({
     rowGap: 24,
     valueOffset: 140,
   });
-
-  auditPage.drawText(
-    JSON.stringify(
-      {
-        agreementId: auditTrail.agreementId,
-        documentHash: auditTrail.documentHash,
-        transactionHash: auditTrail.transactionHash,
-        chain: auditTrail.chain,
-        signerWalletAddress: auditTrail.signerWalletAddress,
-        signerSignedAt: auditTrail.signerSignedAt,
-        finalStatus: auditTrail.finalStatus,
-      },
-      null,
-      2
-    ),
-    {
-      x: 42,
-      y: 62,
-      size: 9,
-      font,
-      color: rgb(0.32, 0.38, 0.46),
-      lineHeight: 12,
-      maxWidth: auditSize.width - 84,
-    }
-  );
 
   const finalPdf = await pdfDoc.save();
   return Buffer.from(finalPdf);

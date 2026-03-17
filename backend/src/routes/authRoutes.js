@@ -8,6 +8,9 @@ const Joi = require('joi');
 const Account = require('../models/Account');
 const LoginNonce = require('../models/LoginNonce');
 const authMiddleware = require('../middleware/authMiddleware');
+const ipfsService = require('../services/ipfsService');
+const { sha256Hex } = require('../utils/proofUtils');
+const { parseStoredSignaturePng } = require('../utils/signatureUtils');
 
 const router = express.Router();
 
@@ -29,6 +32,10 @@ const loginSchema = Joi.object({
   password: Joi.string().required()
 });
 
+const signatureUploadSchema = Joi.object({
+  signatureImageBase64: Joi.string().trim().required(),
+});
+
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   logger.error('❌ FATAL: JWT_SECRET environment variable is required');
@@ -45,6 +52,29 @@ function normalizeAddress(addr) {
 
 function buildLoginMessage(address, nonce) {
   return `Login to KYC/KYB Platform\nAddress: ${address}\nNonce: ${nonce}`;
+}
+
+function serializeAccount(account) {
+  if (!account) return null;
+  return {
+    _id: account._id,
+    email: account.email,
+    name: account.name,
+    role: account.role || 'user',
+    address: account.address,
+    createdAt: account.createdAt,
+    signatureAsset: account.signatureAsset?.cid ? {
+      hash: account.signatureAsset.hash || null,
+      contentType: account.signatureAsset.contentType || 'image/png',
+      width: account.signatureAsset.width || null,
+      height: account.signatureAsset.height || null,
+      uploadedAt: account.signatureAsset.uploadedAt || null,
+      walletAddress: account.signatureAsset.walletAddress || null,
+      hasSignature: true,
+    } : {
+      hasSignature: false,
+    },
+  };
 }
 
 // ============ EMAIL/PASSWORD AUTHENTICATION ============
@@ -84,7 +114,7 @@ router.post('/register', async (req, res) => {
     );
 
     // Return account without password
-    const accountData = { _id: account._id, email: account.email, name: account.name, role: account.role || 'user', createdAt: account.createdAt };
+    const accountData = serializeAccount(account);
 
     res.status(201).json({ token, account: accountData });
   } catch (error) {
@@ -138,14 +168,7 @@ router.post('/login', async (req, res) => {
     );
 
     // Return account without password
-    const accountData = {
-      _id: account._id,
-      email: account.email,
-      name: account.name,
-      role: account.role || 'user',
-      address: account.address,
-      createdAt: account.createdAt
-    };
+    const accountData = serializeAccount(account);
 
     res.json({ token, account: accountData });
   } catch (error) {
@@ -212,20 +235,95 @@ router.post('/link-wallet', authMiddleware, async (req, res) => {
     await LoginNonce.deleteMany({ address: addr });
 
     // Link wallet to account
-    const account = await Account.findByIdAndUpdate(
-      req.user.sub,
-      { $set: { address: addr } },
-      { new: true }
-    );
+    const existingAccount = await Account.findById(req.user.sub);
+    if (!existingAccount) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
 
+    const walletChanged = existingAccount.address && normalizeAddress(existingAccount.address) !== addr;
+    existingAccount.address = addr;
+    if (walletChanged) {
+      existingAccount.signatureAsset = undefined;
+    }
+    const account = await existingAccount.save();
+
+    res.json({ success: true, address: addr, account: serializeAccount(account) });
+  } catch (error) {
+    logger.error('Link wallet error:', error);
+    res.status(500).json({ error: 'Failed to link wallet' });
+  }
+});
+
+router.get('/me', authMiddleware, async (req, res) => {
+  try {
+    const account = await Account.findById(req.user.sub);
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+    res.json({ account: serializeAccount(account) });
+  } catch (error) {
+    logger.error('Get profile error:', error);
+    res.status(500).json({ error: 'Failed to load account' });
+  }
+});
+
+router.post('/signature', authMiddleware, async (req, res) => {
+  try {
+    const { error, value } = signatureUploadSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+    if (error) {
+      return res.status(400).json({ error: error.details.map((detail) => detail.message).join(', ') });
+    }
+
+    const account = await Account.findById(req.user.sub);
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+    if (!account.address) {
+      return res.status(400).json({ error: 'Link a wallet before uploading a reusable signature' });
+    }
+
+    const parsed = parseStoredSignaturePng(value.signatureImageBase64);
+    const hash = sha256Hex(parsed.bytes);
+    const cid = await ipfsService.uploadRaw(parsed.bytes, `account-signature-${account._id}.png`);
+
+    account.signatureAsset = {
+      cid,
+      hash,
+      contentType: parsed.contentType,
+      width: parsed.width,
+      height: parsed.height,
+      uploadedAt: new Date(),
+      walletAddress: account.address,
+    };
+    await account.save();
+
+    res.json({
+      success: true,
+      account: serializeAccount(account),
+    });
+  } catch (error) {
+    logger.error('Signature upload error:', error);
+    res.status(500).json({ error: error.message || 'Failed to upload signature' });
+  }
+});
+
+router.delete('/signature', authMiddleware, async (req, res) => {
+  try {
+    const account = await Account.findById(req.user.sub);
     if (!account) {
       return res.status(404).json({ error: 'Account not found' });
     }
 
-    res.json({ success: true, address: addr, account: { _id: account._id, email: account.email, address: account.address } });
+    account.signatureAsset = undefined;
+    await account.save();
+
+    res.json({
+      success: true,
+      account: serializeAccount(account),
+    });
   } catch (error) {
-    logger.error('Link wallet error:', error);
-    res.status(500).json({ error: 'Failed to link wallet' });
+    logger.error('Signature delete error:', error);
+    res.status(500).json({ error: 'Failed to remove signature' });
   }
 });
 
