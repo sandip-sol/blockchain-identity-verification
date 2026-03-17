@@ -11,7 +11,7 @@ const Recipient = require('../models/Recipient');
 const EnvelopeAuditLog = require('../models/EnvelopeAuditLog');
 const ipfsService = require('../services/ipfsService');
 const web3Service = require('../services/web3Service');
-const { stampSignature } = require('../services/pdfService');
+const { stampSignature, addProofPages } = require('../services/pdfService');
 const {
   resolveEnvelopeAccess,
   canAccessEnvelope,
@@ -19,6 +19,14 @@ const {
   normalizeAddress,
 } = require('../services/envelopeAccessService');
 const Account = require('../models/Account');
+const {
+  sha256Hex,
+  buildVerificationUrl,
+  getNetworkName,
+  buildProofBlockData,
+  extractAuditTrail,
+} = require('../utils/proofUtils');
+const { buildQrPngBuffer } = require('../utils/qrCode');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -90,10 +98,6 @@ const signSchema = Joi.object({
 const voidSchema = Joi.object({
   reason: Joi.string().trim().min(3).max(300).required(),
 });
-
-function sha256Hex(buf) {
-  return crypto.createHash('sha256').update(buf).digest('hex');
-}
 
 function envelopeIdToBytes32(envelopeId) {
   return ethers.keccak256(ethers.toUtf8Bytes(envelopeId));
@@ -315,6 +319,9 @@ function summarizeEnvelope(env, access, recipients, auditLogs) {
         txHash: env.anchoredTxHash || null,
         anchoredAt: env.anchoredAt || null,
       },
+      summary: env.proofBlock || null,
+      auditTrail: env.auditTrail || null,
+      verificationUrl: env.verificationUrl || null,
       technical: technicalProof,
     },
     documents: {
@@ -779,6 +786,14 @@ router.get('/:envelopeId/typed-data', async (req, res) => {
     if (!rec) return res.status(404).json({ error: 'Recipient not found for this envelope' });
     if (rec.status === 'SIGNED') return res.status(400).json({ error: 'Recipient has already signed' });
 
+    if (rec.status === 'PENDING') {
+      rec.status = 'VIEWED';
+      await rec.save();
+      await audit(env.envelopeId, 'RECIPIENT_VIEWED', access.linkedAddress, req, {
+        recipientAddress: rec.recipientAddress,
+      });
+    }
+
     const pendingSigner = await Recipient.findOne({
       envelopeId: env.envelopeId,
       role: 'SIGNER',
@@ -901,8 +916,8 @@ router.post('/:envelopeId/sign', signLimiter, async (req, res) => {
     }
 
     const typedDataHash = ethers.TypedDataEncoder.hash(typed.domain, typed.types, typed.message);
-    const newFinalHash = sha256Hex(updatedPdfBytes);
-    const newFinalCID = await ipfsService.uploadRaw(updatedPdfBytes, `envelope-${env.envelopeId}-rendered.pdf`);
+    let newFinalHash = sha256Hex(updatedPdfBytes);
+    let newFinalCID = await ipfsService.uploadRaw(updatedPdfBytes, `envelope-${env.envelopeId}-rendered.pdf`);
 
     env.documentFinalCID = newFinalCID;
     env.documentFinalHash = newFinalHash;
@@ -929,8 +944,10 @@ router.post('/:envelopeId/sign', signLimiter, async (req, res) => {
 
     const remaining = await Recipient.countDocuments({ envelopeId: env.envelopeId, role: 'SIGNER', status: { $ne: 'SIGNED' } });
     if (remaining === 0) {
+      const finalSignedAt = rec.signedAt || new Date();
       env.status = 'COMPLETED';
       env.canonicalSignedAt = env.canonicalSignedAt || new Date();
+      env.signedAt = finalSignedAt;
       await env.save();
 
       let anchoredTxHash;
@@ -952,10 +969,53 @@ router.post('/:envelopeId/sign', signLimiter, async (req, res) => {
         }
       }
 
+      const network = web3Service.isInitialized ? await web3Service.getNetworkInfo().catch(() => null) : null;
+      const networkName = getNetworkName(network);
+      const signerAccount = await Account.findOne({ address: rec.recipientAddress }).select('name').lean();
+      const recipients = await Recipient.find({ envelopeId: env.envelopeId, role: 'SIGNER' }).sort({ signingOrder: 1 });
+      const auditLogs = await EnvelopeAuditLog.find({ envelopeId: env.envelopeId }).sort({ createdAt: 1 }).limit(300);
+      const verificationUrl = buildVerificationUrl(env.envelopeId);
+      const proofBlock = buildProofBlockData({
+        envelope: env,
+        signerName: signerAccount?.name || null,
+        signerAddress: rec.recipientAddress,
+        signedAt: finalSignedAt,
+        documentHash: env.canonicalDocumentHash,
+        txHash: env.anchoredTxHash || anchoredTxHash || null,
+        networkName,
+        verificationUrl,
+      });
+      const auditTrail = extractAuditTrail({
+        envelope: env,
+        recipients,
+        auditLogs,
+        signerAddress: rec.recipientAddress,
+        signedAt: finalSignedAt,
+        txHash: env.anchoredTxHash || anchoredTxHash || null,
+        networkName,
+      });
+      const qrPngBytes = await buildQrPngBuffer(verificationUrl);
+      const proofPdfBytes = await addProofPages({
+        pdfBytes: updatedPdfBytes,
+        proofBlock,
+        auditTrail,
+        qrPngBytes,
+      });
+      newFinalHash = sha256Hex(proofPdfBytes);
+      newFinalCID = await ipfsService.uploadRaw(proofPdfBytes, `envelope-${env.envelopeId}-signed-proof.pdf`);
+
+      env.documentFinalCID = newFinalCID;
+      env.documentFinalHash = newFinalHash;
+      env.verificationUrl = verificationUrl;
+      env.proofBlock = proofBlock;
+      env.auditTrail = auditTrail;
+      await env.save();
+
       await audit(env.envelopeId, 'ENVELOPE_COMPLETED', env.ownerAddress, req, {
         canonicalDocumentHash: env.canonicalDocumentHash,
         renderedDocumentHash: env.documentFinalHash,
         finalCID: env.documentFinalCID,
+        verificationUrl: env.verificationUrl,
       }, anchoredTxHash);
     }
 

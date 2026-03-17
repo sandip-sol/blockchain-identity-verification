@@ -14,11 +14,16 @@ import {
     ArrowRight,
     ShieldCheck,
     AlertTriangle,
+    Download,
+    Stamp,
+    Search,
 } from 'lucide-react';
 
 import Navbar from '../../../components/Navbar';
 import Card, { CardContent, CardHeader } from '../../../components/Card';
+import StatusBadge from '../../../components/StatusBadge';
 import { useAPI } from '../../../hooks/useAPI';
+import { formatTimestamp } from '../../../utils/proof';
 
 function statusBadge(status) {
     const s = String(status || '').toUpperCase();
@@ -119,6 +124,26 @@ export default function EnvelopeDetailsPage() {
         }
     };
 
+    const downloadDocument = async () => {
+        try {
+            setDocLoading(true);
+            const response = await api.client.get(`/api/envelopes/${envelopeId}/document/final`, {
+                responseType: 'blob',
+            });
+            const blob = new Blob([response.data], { type: 'application/pdf' });
+            const fileUrl = window.URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = fileUrl;
+            anchor.download = `${envelopeId}-signed-proof.pdf`;
+            anchor.click();
+            setTimeout(() => window.URL.revokeObjectURL(fileUrl), 60_000);
+        } catch (e) {
+            toast.error(e?.response?.data?.error || e.message || 'Failed to download signed PDF');
+        } finally {
+            setDocLoading(false);
+        }
+    };
+
     const onVoid = async () => {
         if (!voidReason.trim()) {
             toast.error('Add a reason before voiding the envelope');
@@ -141,6 +166,8 @@ export default function EnvelopeDetailsPage() {
     const auditLogs = data?.auditLogs || [];
     const access = data?.access || { isOwner: false, isRecipient: false };
     const proof = data?.proof || {};
+    const proofSummary = proof?.summary || {};
+    const auditTrail = proof?.auditTrail || {};
     const badge = statusBadge(env?.status);
     const BadgeIcon = badge.icon;
 
@@ -240,6 +267,24 @@ export default function EnvelopeDetailsPage() {
                                             <ExternalLink className="w-5 h-5" /> Open Rendered PDF
                                         </button>
                                     )}
+                                    {data?.documents?.final && (
+                                        <button
+                                            type="button"
+                                            onClick={downloadDocument}
+                                            disabled={docLoading}
+                                            className="secondary-button inline-flex items-center gap-2 disabled:opacity-50"
+                                        >
+                                            <Download className="w-5 h-5" /> Download Signed PDF
+                                        </button>
+                                    )}
+                                    {proof?.verificationUrl && (
+                                        <Link
+                                            href={`/verify?envelopeId=${encodeURIComponent(envelopeId)}`}
+                                            className="secondary-button inline-flex items-center gap-2"
+                                        >
+                                            <Search className="w-5 h-5" /> Verify Document
+                                        </Link>
+                                    )}
                                 </div>
                                 <div className="mt-4 grid md:grid-cols-3 gap-4 text-sm">
                                     <div className="rounded-lg border border-white/10 bg-white/5 p-4">
@@ -263,6 +308,74 @@ export default function EnvelopeDetailsPage() {
                                 </div>
                             </CardContent>
                         </Card>
+
+                        {(proofSummary?.agreementId || auditTrail?.agreementId) && (
+                            <Card>
+                                <CardHeader title="Proof of Signature" subtitle="Visible trust metadata generated for the final signed PDF" />
+                                <CardContent>
+                                    <div className="rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-white/[0.03] to-blue-500/10 p-5">
+                                        <div className="flex items-start justify-between gap-4 flex-wrap">
+                                            <div>
+                                                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-sm text-emerald-200">
+                                                    <Stamp className="w-4 h-4" />
+                                                    {proofSummary?.label || 'Digitally Signed'}
+                                                </div>
+                                                <p className="mt-3 text-xl font-semibold text-white">{proofSummary?.signerDisplayName || '-'}</p>
+                                                <p className="text-sm text-gray-400">{proofSummary?.verificationStatusText || 'Verification metadata available'}</p>
+                                            </div>
+                                            <StatusBadge status={env.status === 'COMPLETED' ? 'finalized' : 'signed'} />
+                                        </div>
+
+                                        <div className="mt-5 grid md:grid-cols-2 gap-4 text-sm">
+                                            <div className="rounded-lg border border-white/10 bg-black/20 p-4">
+                                                <p className="text-gray-400">Signed at</p>
+                                                <p className="mt-1 text-white">{formatTimestamp(proofSummary?.signedAt)}</p>
+                                            </div>
+                                            <div className="rounded-lg border border-white/10 bg-black/20 p-4">
+                                                <p className="text-gray-400">Blockchain network</p>
+                                                <p className="mt-1 text-white">{proofSummary?.blockchainNetwork || '-'}</p>
+                                            </div>
+                                            <div className="rounded-lg border border-white/10 bg-black/20 p-4">
+                                                <p className="text-gray-400">Document hash</p>
+                                                <p className="mt-1 text-white break-all">{proofSummary?.documentHash || '-'}</p>
+                                            </div>
+                                            <div className="rounded-lg border border-white/10 bg-black/20 p-4">
+                                                <p className="text-gray-400">Transaction hash</p>
+                                                <p className="mt-1 text-white break-all">{proofSummary?.transactionHash || 'Pending blockchain anchor'}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-4 flex flex-wrap gap-3">
+                                            <Link
+                                                href={`/verify?envelopeId=${encodeURIComponent(envelopeId)}`}
+                                                className="primary-button inline-flex items-center gap-2"
+                                            >
+                                                <ShieldCheck className="w-5 h-5" /> View Proof
+                                            </Link>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid md:grid-cols-2 gap-4 text-sm mt-4">
+                                        <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+                                            <p className="text-gray-400">Agreement ID</p>
+                                            <p className="text-white mt-1 break-all">{proofSummary?.agreementId || '-'}</p>
+                                        </div>
+                                        <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+                                            <p className="text-gray-400">Verification URL</p>
+                                            <p className="text-white mt-1 break-all">{proof?.verificationUrl || '-'}</p>
+                                        </div>
+                                        <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+                                            <p className="text-gray-400">Audit final status</p>
+                                            <p className="text-white mt-1">{auditTrail?.finalStatus || '-'}</p>
+                                        </div>
+                                        <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+                                            <p className="text-gray-400">Signer wallet</p>
+                                            <p className="text-white mt-1 break-all">{auditTrail?.signerWalletAddress || '-'}</p>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
 
                         <Card>
                             <CardHeader title="Recipients" subtitle="Progress and state-aware signing actions" />

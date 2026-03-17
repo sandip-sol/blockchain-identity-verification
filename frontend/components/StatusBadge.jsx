@@ -28,6 +28,16 @@ const statusConfig = {
         label: 'Revoked',
         className: 'bg-gray-500/20 text-gray-400 border-gray-500/50',
     },
+    signed: {
+        icon: CheckCircle,
+        label: 'Signed',
+        className: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+    },
+    finalized: {
+        icon: CheckCircle,
+        label: 'Finalized',
+        className: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+    },
     none: {
         icon: AlertCircle,
         label: 'Not Verified',

@@ -25,6 +25,8 @@ const EnvelopeSchema = new mongoose.Schema(
     // Final signed document reference
     documentFinalCID: { type: String },
     documentFinalHash: { type: String },
+    verificationUrl: { type: String },
+    signedAt: { type: Date },
 
     // Canonical signed source proof
     canonicalDocumentHash: { type: String },
@@ -43,6 +45,9 @@ const EnvelopeSchema = new mongoose.Schema(
       title: { type: String },
       description: { type: String },
     },
+
+    proofBlock: { type: Object },
+    auditTrail: { type: Object },
   },
   { timestamps: true }
 );

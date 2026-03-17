@@ -25,6 +25,7 @@ const kycRoutes = require('./routes/kycRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
 const accessRoutes = require('./routes/accessRoutes');
 const envelopeRoutes = require('./routes/envelopeRoutes');
+const publicVerificationRoutes = require('./routes/publicVerificationRoutes');
 const activityRoutes = require('./routes/activityRoutes');
 const authRoutes = require('./routes/authRoutes');
 const adminRoutes = require('./routes/adminRoutes');
@@ -128,6 +129,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/transaction', transactionRoutes);
 app.use('/api/access', accessRoutes);
+app.use('/api/public', publicVerificationRoutes);
 app.use('/api/envelopes', envelopeRoutes);
 app.use('/api/activity', activityRoutes);
 
