@@ -400,6 +400,8 @@ Check if grantee has access to grantor's data.
 
 Create a new draft envelope.
 
+Authentication: `Bearer` token required. The authenticated account must have a linked wallet matching `ownerAddress`.
+
 **Body:**
 ```json
 {
@@ -415,9 +417,10 @@ Create a new draft envelope.
 {
   "envelope": {
     "envelopeId": "abc123-uuid",
-    "envelopeIdBytes32": "0x...",
-    "ownerAddress": "0x1234...",
-    "status": "DRAFT"
+    "status": "DRAFT",
+    "metadata": {
+      "title": "Contract Agreement"
+    }
   },
   "messageToSign": "Create Envelope abc123-uuid for 0x1234..."
 }
@@ -427,7 +430,9 @@ Create a new draft envelope.
 
 #### POST `/api/envelopes/upload`
 
-Upload the PDF document to an existing draft envelope.
+Upload the canonical source PDF to an existing draft envelope.
+
+Authentication: `Bearer` token required. Owner only.
 
 **Body:**
 ```json
@@ -444,8 +449,9 @@ Upload the PDF document to an existing draft envelope.
 {
   "envelope": {
     "envelopeId": "abc123-uuid",
-    "documentOriginalCID": "Qm...",
-    "documentOriginalHash": "0x..."
+    "status": "DRAFT",
+    "hasOriginalDocument": true,
+    "canonicalDocumentHash": "ab12..."
   }
 }
 ```
@@ -454,7 +460,9 @@ Upload the PDF document to an existing draft envelope.
 
 #### POST `/api/envelopes/recipients`
 
-Add recipients (signers) to an envelope.
+Replace recipients while the envelope is still in `DRAFT`.
+
+Authentication: `Bearer` token required. Owner only.
 
 **Body:**
 ```json
@@ -469,91 +477,92 @@ Add recipients (signers) to an envelope.
 }
 ```
 
-**Response:**
-```json
-{
-  "envelope": { "status": "IN_PROGRESS" },
-  "recipients": [
-    { "recipientAddress": "0x5678...", "signingOrder": 1 }
-  ]
-}
-```
-
 ---
 
 #### POST `/api/envelopes/send`
 
-Send the envelope (locks recipients and enables signing).
+Send the envelope for signing.
 
-**Body:**
-```json
-{
-  "envelopeId": "abc123-uuid",
-  "ownerAddress": "0x1234...",
-  "signature": "0xsignature..."
-}
-```
+Authentication: `Bearer` token required. Owner only.
 
-**Response:**
-```json
-{
-  "envelope": { "status": "SENT" }
-}
-```
+Requirements:
+- source PDF uploaded
+- at least one signer
+- envelope not expired
 
 ---
 
 #### GET `/api/envelopes/:envelopeId`
 
-Get envelope details including recipients and audit logs.
+Get envelope details for the owner or an assigned recipient.
 
-**Response:**
-```json
-{
-  "envelope": {
-    "envelopeId": "abc123-uuid",
-    "title": "Contract Agreement",
-    "status": "SENT",
-    "documentOriginalCID": "Qm..."
-  },
-  "recipients": [
-    { "recipientAddress": "0x5678...", "hasSigned": false }
-  ],
-  "auditLogs": [
-    { "eventType": "ENVELOPE_CREATED", "timestamp": "..." }
-  ]
-}
-```
+Authentication: `Bearer` token required. Membership required.
+
+**Response shape:**
+- `envelope`: workflow state and next action
+- `access`: whether caller is owner/recipient
+- `recipients`: signer progress and state-aware signing eligibility
+- `proof`: canonical source proof, rendered PDF proof, and anchor proof
+- `documents`: authenticated backend document URLs
+- `auditLogs`: workflow audit events
+
+---
+
+#### GET `/api/envelopes/:envelopeId/document/original`
+
+Retrieve the protected canonical source PDF.
+
+Authentication: `Bearer` token required. Membership required.
+
+---
+
+#### GET `/api/envelopes/:envelopeId/document/final`
+
+Retrieve the protected rendered PDF, if available.
+
+Authentication: `Bearer` token required. Membership required.
 
 ---
 
 #### GET `/api/envelopes/:envelopeId/typed-data`
 
-Get EIP-712 typed data for signing.
+Get EIP-712 typed data for signing the canonical source document.
+
+Authentication: `Bearer` token required. Assigned recipient only.
 
 **Query Parameters:**
-- `recipientAddress` - The signer's wallet address
+- `recipientAddress` - must match the authenticated account's linked wallet
 
 **Response:**
 ```json
 {
   "domain": {
-    "name": "KYC-Envelope",
-    "version": "1",
-    "chainId": 80001
+    "name": "BlockchainIdentityVerification",
+    "version": "2",
+    "chainId": 31337,
+    "verifyingContract": "0x..."
   },
   "types": {
-    "Sign": [
+    "EnvelopeSign": [
+      { "name": "intent", "type": "string" },
       { "name": "envelopeId", "type": "bytes32" },
       { "name": "documentHash", "type": "bytes32" },
-      { "name": "signer", "type": "address" }
+      { "name": "recipient", "type": "address" },
+      { "name": "nonce", "type": "uint256" },
+      { "name": "deadline", "type": "uint256" }
     ]
   },
+  "primaryType": "EnvelopeSign",
   "message": {
+    "intent": "SIGN_ENVELOPE_SOURCE_V1",
     "envelopeId": "0x...",
     "documentHash": "0x...",
-    "signer": "0x5678..."
-  }
+    "recipient": "0x5678...",
+    "nonce": 0,
+    "deadline": 1770000000
+  },
+  "typedDataHash": "0x...",
+  "canonicalDocumentHash": "ab12..."
 }
 ```
 
@@ -561,52 +570,22 @@ Get EIP-712 typed data for signing.
 
 #### POST `/api/envelopes/:envelopeId/sign`
 
-Submit a signature for an envelope.
+Submit a recipient signature for the canonical source document. Optional PNG signature artwork may also be submitted for rendered PDF stamping.
 
-**Body:**
-```json
-{
-  "recipientAddress": "0x5678...",
-  "signature": "0xsignature...",
-  "signatureImageBase64": "data:image/png;base64,..."
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "recipient": {
-    "hasSigned": true,
-    "signedAt": "2026-01-15T09:00:00.000Z"
-  }
-}
-```
+Authentication: `Bearer` token required. Assigned recipient only.
 
 ---
 
-#### POST `/api/envelopes/:envelopeId/anchor`
+#### POST `/api/envelopes/:envelopeId/void`
 
-Anchor a fully-signed envelope to the blockchain.
+Void an envelope and stop further signing.
+
+Authentication: `Bearer` token required. Owner only.
 
 **Body:**
 ```json
 {
-  "ownerAddress": "0x1234...",
-  "signature": "0xsignature..."
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "txHash": "0xabc...",
-  "envelope": {
-    "status": "COMPLETED",
-    "anchoredAt": "2026-01-15T10:00:00.000Z",
-    "anchoredTxHash": "0xabc..."
-  }
+  "reason": "Wrong recipient list"
 }
 ```
 
@@ -614,22 +593,14 @@ Anchor a fully-signed envelope to the blockchain.
 
 #### GET `/api/envelopes/:envelopeId/verify`
 
-Verify an envelope's on-chain anchoring.
+Verify canonical source proof and on-chain anchor state.
 
-**Response:**
-```json
-{
-  "success": true,
-  "onchain": {
-    "exists": true,
-    "documentHash": "0x...",
-    "signers": ["0x5678...", "0x9abc..."],
-    "completedAt": "2026-01-15T10:00:00.000Z",
-    "finalCID": "Qm..."
-  },
-  "hashMatches": true
-}
-```
+Authentication: `Bearer` token required. Membership required.
+
+**Response shape:**
+- `canonical`: signed source hash and source-hash anchor comparison
+- `rendered`: rendered PDF metadata
+- `anchor`: on-chain record, tx hash, and verification status
 
 ---
 

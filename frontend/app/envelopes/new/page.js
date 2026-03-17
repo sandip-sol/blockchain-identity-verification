@@ -10,6 +10,7 @@ import { FileUp, Users, Send, ArrowLeft, ArrowRight, FileSignature } from 'lucid
 import Navbar from '../../../components/Navbar';
 import Card, { CardContent, CardHeader } from '../../../components/Card';
 import { useAPI } from '../../../hooks/useAPI';
+import { useAuth } from '../../../context/AuthContext';
 
 function fileToBase64(file) {
     return new Promise((resolve, reject) => {
@@ -27,6 +28,7 @@ function fileToBase64(file) {
 export default function NewEnvelopePage() {
     const router = useRouter();
     const api = useAPI();
+    const { isAuthenticated } = useAuth();
     const { address, isConnected } = useAccount();
     const { signMessageAsync } = useSignMessage();
 
@@ -50,6 +52,10 @@ export default function NewEnvelopePage() {
     const createDraft = async () => {
         if (!isConnected || !address) {
             toast.error('Connect your wallet first');
+            return;
+        }
+        if (!isAuthenticated) {
+            toast.error('Sign in before creating an envelope');
             return;
         }
         setLoading(true);
@@ -167,6 +173,14 @@ export default function NewEnvelopePage() {
                             <FileSignature className="w-14 h-14 mx-auto mb-4 text-gray-600" />
                             <h2 className="text-xl font-bold mb-2">Connect Wallet Required</h2>
                             <p className="text-gray-400">Connect your wallet to create and manage envelopes.</p>
+                        </CardContent>
+                    </Card>
+                ) : !isAuthenticated ? (
+                    <Card>
+                        <CardContent className="py-10 text-center">
+                            <FileSignature className="w-14 h-14 mx-auto mb-4 text-gray-600" />
+                            <h2 className="text-xl font-bold mb-2">Sign In Required</h2>
+                            <p className="text-gray-400">Use your account login and linked wallet to create production envelopes.</p>
                         </CardContent>
                     </Card>
                 ) : (

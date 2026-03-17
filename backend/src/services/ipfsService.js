@@ -15,6 +15,20 @@ class IPFSService {
         this.usePinata = false;
     }
 
+    isProduction() {
+        return process.env.NODE_ENV === 'production';
+    }
+
+    hasDurableRawStorage() {
+        return this.usePinata || Boolean(this.client);
+    }
+
+    assertRawStorageWritable() {
+        if (this.isProduction() && !this.hasDurableRawStorage()) {
+            throw new Error('Durable document storage is not configured');
+        }
+    }
+
     /**
      * Initialize IPFS client
      */
@@ -154,12 +168,16 @@ class IPFSService {
      */
     async uploadRaw(bytes, filename = 'file.bin') {
         if (!this.isInitialized) await this.initialize();
+        this.assertRawStorageWritable();
 
         try {
             const result = await this.client.add(bytes, { timeout: 10000, pin: true, wrapWithDirectory: false });
             logger.info('Uploaded raw to IPFS', { cid: result.path, filename });
             return result.path;
         } catch (error) {
+            if (this.isProduction()) {
+                throw new Error('Raw document upload failed and local fallback is disabled in production');
+            }
             logger.warn('IPFS raw upload failed, falling back to local', { error: error.message });
             return this.saveLocallyRaw(bytes, filename);
         }
@@ -184,6 +202,9 @@ class IPFSService {
             }
             return Buffer.concat(chunks);
         } catch (error) {
+            if (this.isProduction()) {
+                throw new Error('Raw document retrieval failed and local fallback is disabled in production');
+            }
             logger.warn('IPFS raw retrieval failed, checking local', { error: error.message });
             return this.retrieveLocallyRaw(cid);
         }

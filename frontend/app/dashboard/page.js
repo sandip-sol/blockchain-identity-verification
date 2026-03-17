@@ -23,6 +23,7 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [activities, setActivities] = useState([]);
     const [txProofCount, setTxProofCount] = useState(0);
+    const [ownedEnvelopes, setOwnedEnvelopes] = useState([]);
 
     useEffect(() => {
         if (!isConnected) {
@@ -50,9 +51,10 @@ export default function Dashboard() {
 
             // Load activity and transaction count in parallel
             if (address) {
-                const [activityResp, histResp] = await Promise.allSettled([
+                const [activityResp, histResp, envelopeResp] = await Promise.allSettled([
                     api.get(`/api/activity/${address}`),
-                    api.get(`/api/transaction/history/${address}`)
+                    api.get(`/api/transaction/history/${address}`),
+                    api.get('/api/envelopes/mine'),
                 ]);
 
                 if (activityResp.status === 'fulfilled') {
@@ -60,6 +62,9 @@ export default function Dashboard() {
                 }
                 if (histResp.status === 'fulfilled') {
                     setTxProofCount(Array.isArray(histResp.value.transactions) ? histResp.value.transactions.length : 0);
+                }
+                if (envelopeResp.status === 'fulfilled') {
+                    setOwnedEnvelopes(envelopeResp.value.owned || []);
                 }
             }
         } catch (error) {
@@ -226,6 +231,41 @@ export default function Dashboard() {
                         <div className="space-y-6">
                             {/* Quick Actions */}
                             <Card>
+                                <CardHeader
+                                    title="Recent Envelopes"
+                                    subtitle="Recover drafts and in-progress signing workflows"
+                                />
+                                <CardContent>
+                                    {ownedEnvelopes.length === 0 ? (
+                                        <div className="text-gray-400">No envelopes yet. Create one and it will appear here with its Envelope ID.</div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {ownedEnvelopes.slice(0, 5).map((env) => (
+                                                <button
+                                                    key={env.envelopeId}
+                                                    onClick={() => router.push(`/envelopes/${env.envelopeId}`)}
+                                                    className="w-full text-left rounded-lg border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition-colors"
+                                                >
+                                                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                                                        <p className="font-medium text-gray-200">{env.metadata?.title || 'Untitled Envelope'}</p>
+                                                        <StatusBadge status={String(env.status || '').toLowerCase()} />
+                                                    </div>
+                                                    <p className="text-xs text-gray-400 mt-2 break-all">Envelope ID: <span className="font-mono text-gray-200">{env.envelopeId}</span></p>
+                                                    <p className="text-xs text-gray-400 mt-1">
+                                                        Progress: {env.signerProgress?.signed || 0}/{env.signerProgress?.total || 0} signed
+                                                    </p>
+                                                    {env.nextAction && (
+                                                        <p className="text-xs text-gray-400 mt-1">{env.nextAction}</p>
+                                                    )}
+                                                </button>
+                                            ))}
+                                            <button onClick={() => router.push('/envelopes')} className="secondary-button w-full">View all envelopes</button>
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+
+                            <Card>
                                 <CardHeader title="Quick Actions" />
                                 <CardContent>
                                     <div className="space-y-3">
@@ -313,6 +353,12 @@ export default function Dashboard() {
                                             <p className="text-sm text-gray-400 mb-1">On-Chain Status</p>
                                             <p className="text-2xl font-bold text-gradient">
                                                 {verified ? 'Active' : 'Inactive'}
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <p className="text-sm text-gray-400 mb-1">Owned Envelopes</p>
+                                            <p className="text-2xl font-bold text-gradient">
+                                                {ownedEnvelopes.length}
                                             </p>
                                         </div>
                                     </div>

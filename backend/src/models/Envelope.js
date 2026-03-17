@@ -26,11 +26,18 @@ const EnvelopeSchema = new mongoose.Schema(
     documentFinalCID: { type: String },
     documentFinalHash: { type: String },
 
+    // Canonical signed source proof
+    canonicalDocumentHash: { type: String },
+    canonicalSignedAt: { type: Date },
+
     expiresAt: { type: Date },
 
     // On-chain anchoring (optional)
     anchoredTxHash: { type: String },
     anchoredAt: { type: Date },
+
+    voidReason: { type: String },
+    voidedAt: { type: Date },
 
     metadata: {
       title: { type: String },
