@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { useDisconnect } from 'wagmi';
 import { Shield, Home, FileCheck, Search, Wallet, FileSignature, Activity, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -11,6 +12,7 @@ export default function Navbar() {
     const pathname = usePathname();
     const auth = useAuth();
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const { disconnectAsync } = useDisconnect();
 
     const navItems = [
         { href: '/', label: 'Home', icon: Home },
@@ -22,6 +24,18 @@ export default function Navbar() {
         { href: '/envelopes', label: 'Envelopes', icon: FileSignature },
         ...(auth.account?.role === 'admin' ? [{ href: '/admin', label: 'Admin', icon: ShieldCheck }] : []),
     ];
+
+    const handleLogout = async () => {
+        setIsMobileMenuOpen(false);
+
+        try {
+            await disconnectAsync();
+        } catch {
+            // Ignore wallet disconnect errors and still clear app auth state.
+        } finally {
+            auth.logout();
+        }
+    };
 
     return (
         <nav className="sticky top-0 z-50 border-b border-white/10 bg-[#0b0c10]/85 backdrop-blur supports-[backdrop-filter]:bg-[#0b0c10]/60">
@@ -66,7 +80,7 @@ export default function Navbar() {
                 <div className="flex items-center gap-3 ml-auto md:ml-0">
                     {auth.isAuthenticated ? (
                         <button
-                            onClick={auth.logout}
+                            onClick={handleLogout}
                             className="secondary-button"
                             title="Logout"
                         >
@@ -83,7 +97,9 @@ export default function Navbar() {
                         </div>
                     )}
 
-                    <ConnectButton chainStatus="icon" showBalance={false} />
+                    {auth.isAuthenticated && (
+                        <ConnectButton chainStatus="icon" showBalance={false} />
+                    )}
 
                     {/* Mobile Menu Toggle */}
                     {auth.isAuthenticated && (
