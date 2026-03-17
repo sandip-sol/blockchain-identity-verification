@@ -15,6 +15,10 @@ class IPFSService {
         this.usePinata = false;
     }
 
+    get pinataGatewayBase() {
+        return process.env.PINATA_GATEWAY_URL || 'https://gateway.pinata.cloud/ipfs';
+    }
+
     isProduction() {
         return process.env.NODE_ENV === 'production';
     }
@@ -110,10 +114,39 @@ class IPFSService {
         });
     }
 
+    async _pinataUploadRaw(bytes, filename = 'file.bin') {
+        const form = new FormData();
+        const safeFilename = String(filename || 'file.bin').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const blob = new Blob([bytes], { type: 'application/octet-stream' });
+        form.append('file', blob, safeFilename);
+        form.append('pinataMetadata', JSON.stringify({ name: safeFilename }));
+
+        const response = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
+            method: 'POST',
+            headers: {
+                pinata_api_key: this.pinataApiKey,
+                pinata_secret_api_key: this.pinataSecretKey,
+            },
+            body: form,
+        });
+
+        if (!response.ok) {
+            const body = await response.text();
+            throw new Error(`Pinata raw upload failed: ${response.status} ${body}`);
+        }
+
+        const parsed = await response.json();
+        if (!parsed.IpfsHash) {
+            throw new Error('Pinata raw upload failed: missing IpfsHash');
+        }
+
+        return parsed.IpfsHash;
+    }
+
     async _pinataRetrieve(cid) {
         const https = require('https');
         return new Promise((resolve, reject) => {
-            https.get(`https://gateway.pinata.cloud/ipfs/${cid}`, (res) => {
+            https.get(`${this.pinataGatewayBase}/${cid}`, (res) => {
                 let data = '';
                 res.on('data', chunk => data += chunk);
                 res.on('end', () => {
@@ -122,6 +155,16 @@ class IPFSService {
                 });
             }).on('error', reject);
         });
+    }
+
+    async _pinataRetrieveRaw(cid) {
+        const response = await fetch(`${this.pinataGatewayBase}/${cid}`);
+        if (!response.ok) {
+            const body = await response.text();
+            throw new Error(`Pinata raw retrieval failed: ${response.status} ${body}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        return Buffer.from(arrayBuffer);
     }
 
     // ──────────────────────────── Public API ────────────────────────────────
@@ -170,6 +213,20 @@ class IPFSService {
         if (!this.isInitialized) await this.initialize();
         this.assertRawStorageWritable();
 
+        if (this.usePinata) {
+            try {
+                const cid = await this._pinataUploadRaw(bytes, filename);
+                logger.info('Uploaded raw to Pinata IPFS', { cid, filename });
+                return cid;
+            } catch (error) {
+                if (this.isProduction()) {
+                    throw new Error(`Raw document upload failed via Pinata: ${error.message}`);
+                }
+                logger.warn('Pinata raw upload failed, falling back to local', { error: error.message });
+                return this.saveLocallyRaw(bytes, filename);
+            }
+        }
+
         try {
             const result = await this.client.add(bytes, { timeout: 10000, pin: true, wrapWithDirectory: false });
             logger.info('Uploaded raw to IPFS', { cid: result.path, filename });
@@ -194,6 +251,18 @@ class IPFSService {
         }
 
         if (!this.isInitialized) await this.initialize();
+
+        if (this.usePinata) {
+            try {
+                return await this._pinataRetrieveRaw(cid);
+            } catch (error) {
+                if (this.isProduction()) {
+                    throw new Error(`Raw document retrieval failed via Pinata: ${error.message}`);
+                }
+                logger.warn('Pinata raw retrieval failed, checking local', { error: error.message });
+                return this.retrieveLocallyRaw(cid);
+            }
+        }
 
         try {
             const chunks = [];
