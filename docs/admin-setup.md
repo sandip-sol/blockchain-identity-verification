@@ -2,7 +2,7 @@
 
 ## Overview
 
-Admin access is controlled by a `role` field on the `Account` model in MongoDB. By default, all new accounts are created with `role: "user"`. Admin accounts can access the `/api/admin/*` endpoints for platform management.
+Admin access is controlled by a `role` field on the `Account` model in MongoDB. By default, all new accounts are created with `role: "USER"`. KYC review access is enforced in backend middleware, not only in the frontend.
 
 ---
 
@@ -17,7 +17,7 @@ mongosh "mongodb://localhost:27017/kyc-kyb-platform"
 ```js
 db.accounts.updateOne(
   { email: "your-email@example.com" },
-  { $set: { role: "admin" } }
+  { $set: { role: "KYC_ADMIN" } }
 )
 ```
 
@@ -25,11 +25,11 @@ db.accounts.updateOne(
 
 ```bash
 mongosh "mongodb://localhost:27017/kyc-kyb-platform" \
-  --eval 'db.accounts.updateOne({email: "your-email@example.com"}, {$set: {role: "admin"}})'
+  --eval 'db.accounts.updateOne({email: "your-email@example.com"}, {$set: {role: "KYC_ADMIN"}})'
 ```
 
 > [!IMPORTANT]
-> After promoting, **log out and log back in** so a fresh JWT is issued with the `admin` role.
+> After promoting, log out and log back in so a fresh JWT is issued with the updated normalized role.
 
 ---
 
@@ -44,14 +44,14 @@ mongosh "mongodb://localhost:27017/kyc-kyb-platform" \
 
 Expected output:
 ```json
-{ "_id": "...", "email": "your-email@example.com", "role": "admin" }
+{ "_id": "...", "email": "your-email@example.com", "role": "KYC_ADMIN" }
 ```
 
 ---
 
 ## Available Admin Endpoints
 
-All endpoints require a valid JWT with `role: "admin"` in the `Authorization: Bearer <token>` header.
+All endpoints require a valid JWT in the `Authorization: Bearer <token>` header, and the backend checks the persisted account role before allowing access.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -61,6 +61,15 @@ All endpoints require a valid JWT with `role: "admin"` in the `Authorization: Be
 | DELETE | `/api/admin/accounts/:id` | Delete an account |
 | POST | `/api/admin/accounts/:id/reset-password` | Reset a user's password |
 | GET | `/api/admin/users` | List KYC/KYB users |
+| GET | `/api/admin/kyc` | List KYC applications |
+| GET | `/api/admin/kyc/:id` | Get KYC application detail |
+| GET | `/api/admin/kyc/:id/audit` | Get audit history |
+| PATCH | `/api/admin/kyc/:id/status` | Move a case to `UNDER_REVIEW` |
+| POST | `/api/admin/kyc/:id/approve` | Approve a case |
+| POST | `/api/admin/kyc/:id/reject` | Reject with reason |
+| POST | `/api/admin/kyc/:id/request-resubmission` | Request corrected evidence |
+| POST | `/api/admin/kyc/:id/verify-onchain` | Trigger on-chain verification |
+| GET | `/api/admin/kyc/stats` | KYC lifecycle stats |
 
 ### Query Parameters
 
@@ -72,11 +81,12 @@ All endpoints require a valid JWT with `role: "admin"` in the `Authorization: Be
 ## How Auth Flow Works
 
 ```
-1. User logs in → JWT issued with { sub, email, role }
-2. Request hits /api/admin/* → adminMiddleware runs
-3. Middleware checks JWT role === "admin" (fast path)
-4. If role not in JWT → falls back to DB lookup (handles pre-promotion tokens)
-5. Access granted or 403 returned
+1. User logs in → JWT issued with `{ sub, email, role }`
+2. Request hits `/api/admin/*` or `/api/admin/kyc/*`
+3. Auth middleware verifies JWT
+4. Role middleware loads the current account from MongoDB
+5. The normalized role is checked against the allowed role set for that endpoint
+6. Access granted or `403` returned
 ```
 
 ---
@@ -85,7 +95,16 @@ All endpoints require a valid JWT with `role: "admin"` in the `Authorization: Be
 
 ```bash
 mongosh "mongodb://localhost:27017/kyc-kyb-platform" \
-  --eval 'db.accounts.updateOne({email: "admin@example.com"}, {$set: {role: "user"}})'
+  --eval 'db.accounts.updateOne({email: "admin@example.com"}, {$set: {role: "USER"}})'
 ```
 
-The user's current session will remain admin until their JWT expires. For immediate revocation, also clear their active sessions or reduce `JWT_EXPIRE` in `.env`.
+The user's current session will continue to present the previous JWT claims until they log in again, but backend authorization now re-checks the persisted role, so revocation takes effect on protected endpoints immediately.
+
+## Supported Roles
+
+- `SUPER_ADMIN`: full platform and KYC control
+- `KYC_ADMIN`: approve, reject, request resubmission, and verify on-chain
+- `KYC_REVIEWER`: review access and move a case into active review
+- `VERIFIER`: approve and trigger on-chain verification
+- `AUDITOR`: read-only access with full audit visibility
+- `SUPPORT_READONLY`: limited read-only operational access

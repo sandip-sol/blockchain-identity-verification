@@ -47,7 +47,7 @@ export default function KYCPage() {
                 router.push('/dashboard');
             }, 3000);
         } catch (err) {
-            toast.error(error || 'Failed to submit KYC application');
+            toast.error(err.message || error || 'Failed to submit KYC application');
         }
     };
 

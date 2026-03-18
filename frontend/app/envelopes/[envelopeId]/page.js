@@ -20,7 +20,7 @@ import {
 
 import Navbar from '../../../components/Navbar';
 import Card, { CardContent, CardHeader } from '../../../components/Card';
-import { CompactAuditTrail, ProofDetailsGrid, ProofHero } from '../../../components/ProofPanels';
+import { ProofDetailsGrid, ProofHero } from '../../../components/ProofPanels';
 import { useAPI } from '../../../hooks/useAPI';
 import { formatTimestamp } from '../../../utils/proof';
 
@@ -218,15 +218,15 @@ export default function EnvelopeDetailsPage() {
                             <CardHeader title="Status" subtitle="Operational summary for owner and signers" />
                             <CardContent>
                                 <div className="grid md:grid-cols-3 gap-4">
-                                    <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+                                    <div className="rounded-lg border border-white/10 bg-white/5 p-4 overflow-hidden min-w-0">
                                         <p className="text-gray-400 text-sm">Next action</p>
-                                        <p className="text-white font-medium mt-1 break-all leading-6">{env.nextAction}</p>
+                                        <p className="text-white font-medium mt-1 break-all leading-6" style={{ overflowWrap: 'anywhere' }}>{env.nextAction}</p>
                                     </div>
-                                    <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+                                    <div className="rounded-lg border border-white/10 bg-white/5 p-4 overflow-hidden min-w-0">
                                         <p className="text-gray-400 text-sm">Signer progress</p>
                                         <p className="text-white font-medium mt-1">{progress.signed} / {progress.total} signed</p>
                                     </div>
-                                    <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+                                    <div className="rounded-lg border border-white/10 bg-white/5 p-4 overflow-hidden min-w-0">
                                         <p className="text-gray-400 text-sm">Anchor status</p>
                                         <p className="text-white font-medium mt-1">{verifyData?.anchor?.status || (proof?.anchor?.txHash ? 'Anchored' : 'Pending')}</p>
                                     </div>
@@ -319,19 +319,21 @@ export default function EnvelopeDetailsPage() {
                                         signedAt={formatTimestamp(proofSummary?.signedAt)}
                                         signedStatus={env.status === 'COMPLETED' ? 'Signed' : env.status}
                                         anchorStatus={verifyData?.anchor?.status === 'VERIFIED' ? 'Anchor Verified' : (proofSummary?.transactionHash ? 'Anchor Pending' : 'Anchor Pending')}
+                                        documentHash={proofSummary?.documentHash}
+                                        agreementId={proofSummary?.agreementId || auditTrail?.agreementId}
+                                        transactionHash={proofSummary?.transactionHash}
+                                        network={proofSummary?.blockchainNetwork || proofSummary?.network}
+                                        ipAddress={auditTrail?.ipAddress}
+                                        signatureImageUrl={proof?.signatureImageUrl}
+                                        verificationUrl={proof?.verificationUrl}
                                         actions={(
                                             <>
                                                 <Link
                                                     href={`/verify?envelopeId=${encodeURIComponent(envelopeId)}`}
-                                                    className="primary-button inline-flex items-center gap-2"
+                                                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-800 transition"
                                                 >
                                                     View Proof
                                                 </Link>
-                                                {proof?.verificationUrl ? (
-                                                    <Link href={proof.verificationUrl} className="secondary-button inline-flex items-center gap-2">
-                                                        Verification Link
-                                                    </Link>
-                                                ) : null}
                                             </>
                                         )}
                                     />
@@ -346,8 +348,6 @@ export default function EnvelopeDetailsPage() {
                                         explorerUrl={null}
                                         anchorStatus={verifyData?.anchor?.status === 'VERIFIED' ? 'Verified' : (proofSummary?.transactionHash ? 'Pending confirmation' : 'Pending')}
                                     />
-
-                                    <CompactAuditTrail auditTrail={auditTrail} />
                                 </CardContent>
                             </Card>
                         )}

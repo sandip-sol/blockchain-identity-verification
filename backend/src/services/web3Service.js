@@ -14,6 +14,7 @@ class Web3Service {
         this.signer = null;
         this.contracts = {};
         this.isInitialized = false;
+        this.eventListenersAttached = false;
     }
 
     /**
@@ -55,52 +56,66 @@ class Web3Service {
                 '../../../deployments/localhost-latest.json'
             );
 
+            let deployment = null;
             if (fs.existsSync(deploymentPath)) {
-                const deployment = JSON.parse(fs.readFileSync(deploymentPath, 'utf8'));
+                deployment = JSON.parse(fs.readFileSync(deploymentPath, 'utf8'));
+            }
 
-                // Load ABIs from artifacts
-                const identityTokenABI = this.loadABI('IdentityToken');
-                const transactionRegistryABI = this.loadABI('TransactionRegistry');
-                const accessControlABI = this.loadABI('DataAccessControl');
-                let documentRegistryABI;
-                try {
-                    documentRegistryABI = this.loadABI('DocumentSignatureRegistry');
-                } catch (e) {
-                    documentRegistryABI = null;
-                }
+            const identityTokenABI = this.loadABI('IdentityToken');
+            const transactionRegistryABI = this.loadABI('TransactionRegistry');
+            const accessControlABI = this.loadABI('DataAccessControl');
+            let documentRegistryABI;
+            try {
+                documentRegistryABI = this.loadABI('DocumentSignatureRegistry');
+            } catch (e) {
+                documentRegistryABI = null;
+            }
 
-                // Create contract instances
+            const identityTokenAddress = process.env.IDENTITY_TOKEN_ADDRESS || deployment?.contracts?.IdentityToken;
+            const transactionRegistryAddress = process.env.TRANSACTION_REGISTRY_ADDRESS || deployment?.contracts?.TransactionRegistry;
+            const accessControlAddress = process.env.DATA_ACCESS_CONTROL_ADDRESS || deployment?.contracts?.DataAccessControl;
+            const documentRegistryAddress = process.env.DOCUSIGN_REGISTRY_ADDRESS || deployment?.contracts?.DocumentSignatureRegistry;
+
+            if (identityTokenAddress) {
                 this.contracts.identityToken = new ethers.Contract(
-                    deployment.contracts.IdentityToken,
+                    identityTokenAddress,
                     identityTokenABI,
                     this.signer || this.provider
                 );
+            }
 
+            if (transactionRegistryAddress) {
                 this.contracts.transactionRegistry = new ethers.Contract(
-                    deployment.contracts.TransactionRegistry,
+                    transactionRegistryAddress,
                     transactionRegistryABI,
                     this.signer || this.provider
                 );
+            }
 
+            if (accessControlAddress) {
                 this.contracts.accessControl = new ethers.Contract(
-                    deployment.contracts.DataAccessControl,
+                    accessControlAddress,
                     accessControlABI,
                     this.signer || this.provider
                 );
+            }
 
-                // Optional DocuSign-like registry
-                const regAddr = process.env.DOCUSIGN_REGISTRY_ADDRESS || deployment.contracts.DocumentSignatureRegistry;
-                if (documentRegistryABI && regAddr) {
-                    this.contracts.documentRegistry = new ethers.Contract(
-                        regAddr,
-                        documentRegistryABI,
-                        this.signer || this.provider
-                    );
-                }
+            if (documentRegistryABI && documentRegistryAddress) {
+                this.contracts.documentRegistry = new ethers.Contract(
+                    documentRegistryAddress,
+                    documentRegistryABI,
+                    this.signer || this.provider
+                );
+            }
 
+            if (!deployment) {
+                logger.warn('⚠️  No deployment file found. Loaded contracts from environment where available.');
+            }
+
+            if (this.contracts.identityToken || this.contracts.transactionRegistry || this.contracts.accessControl) {
                 logger.info('✅ Contracts loaded successfully');
             } else {
-                logger.warn('⚠️  No deployment file found. Contracts not loaded.');
+                logger.warn('⚠️  Contract addresses are not configured. Blockchain features are disabled.');
             }
         } catch (error) {
             logger.error('Contract loading error:', error.message);
@@ -142,6 +157,12 @@ class Web3Service {
      */
     async mintIdentityToken(userAddress, dataHash, verificationType, expiryDate) {
         if (!this.isInitialized) await this.initialize();
+        if (!this.signer) {
+            throw new Error('PRIVATE_KEY is not configured on the backend');
+        }
+        if (!this.contracts.identityToken) {
+            throw new Error('IdentityToken contract is not configured');
+        }
 
         try {
             const tx = await this.contracts.identityToken.mintIdentityToken(
@@ -318,6 +339,7 @@ class Web3Service {
     async isSignerVerifier() {
         if (!this.isInitialized) await this.initialize();
         if (!this.signer) return false;
+        if (!this.contracts.identityToken) return false;
         const addr = await this.signer.getAddress();
         const role = await this.contracts.identityToken.VERIFIER_ROLE();
         return await this.contracts.identityToken.hasRole(role, addr);
@@ -413,28 +435,58 @@ class Web3Service {
             throw new Error('Web3 service not initialized');
         }
 
-        // Listen to IdentityMinted events
-        this.contracts.identityToken.on('IdentityMinted', (tokenId, user, verifier, type, expiry, event) => {
-            logger.info('📢 IdentityMinted event:', {
-                tokenId: tokenId.toString(),
-                user,
-                verifier,
-                type,
-                expiry: new Date(Number(expiry) * 1000)
-            });
-        });
+        if (this.eventListenersAttached) {
+            return;
+        }
 
-        // Listen to TransactionRegistered events
-        this.contracts.transactionRegistry.on('TransactionRegistered', (tokenId, registeredBy, txHash, txType, timestamp, event) => {
-            logger.info('📢 TransactionRegistered event:', {
-                tokenId: tokenId.toString(),
-                registeredBy,
-                txHash,
-                txType,
-                timestamp: new Date(Number(timestamp) * 1000)
-            });
-        });
+        const listenersEnabled = String(process.env.ENABLE_WEB3_EVENT_LISTENERS || '').toLowerCase() === 'true';
+        if (!listenersEnabled) {
+            logger.info('Web3 event listeners are disabled. Set ENABLE_WEB3_EVENT_LISTENERS=true to enable them.');
+            return;
+        }
 
+        if (!this.contracts.identityToken && !this.contracts.transactionRegistry) {
+            logger.warn('No contracts available for event listeners.');
+            return;
+        }
+
+        if (typeof this.provider?.on === 'function') {
+            this.provider.on('error', (error) => {
+                if (error?.error?.message === 'filter not found' || error?.shortMessage === 'could not coalesce error') {
+                    logger.warn('RPC provider dropped an event filter; consider disabling polling listeners or using a websocket provider.', {
+                        error: error?.error?.message || error?.message
+                    });
+                    return;
+                }
+                logger.warn('Web3 provider emitted an error', { error: error?.message || String(error) });
+            });
+        }
+
+        if (this.contracts.identityToken) {
+            this.contracts.identityToken.on('IdentityMinted', (tokenId, user, verifier, type, expiry) => {
+                logger.info('📢 IdentityMinted event:', {
+                    tokenId: tokenId.toString(),
+                    user,
+                    verifier,
+                    type,
+                    expiry: new Date(Number(expiry) * 1000)
+                });
+            });
+        }
+
+        if (this.contracts.transactionRegistry) {
+            this.contracts.transactionRegistry.on('TransactionRegistered', (tokenId, registeredBy, txHash, txType, timestamp) => {
+                logger.info('📢 TransactionRegistered event:', {
+                    tokenId: tokenId.toString(),
+                    registeredBy,
+                    txHash,
+                    txType,
+                    timestamp: new Date(Number(timestamp) * 1000)
+                });
+            });
+        }
+
+        this.eventListenersAttached = true;
         logger.info('👂 Event listeners attached');
     }
 

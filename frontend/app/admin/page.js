@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
     Shield, Users, UserCheck, Clock, Search, Trash2, KeyRound,
@@ -11,6 +12,7 @@ import Navbar from '../../components/Navbar';
 import Card, { CardHeader, CardContent } from '../../components/Card';
 import { useAuth } from '../../context/AuthContext';
 import { useAPI } from '../../hooks/useAPI';
+import { canAccessAdmin } from '../../utils/rbac';
 
 export default function AdminDashboard() {
     const router = useRouter();
@@ -35,7 +37,7 @@ export default function AdminDashboard() {
 
     // Check admin access
     useEffect(() => {
-        if (auth.hydrated && (!auth.isAuthenticated || auth.account?.role !== 'admin')) {
+        if (auth.hydrated && (!auth.isAuthenticated || !canAccessAdmin(auth.account?.normalizedRole || auth.account?.role))) {
             router.push('/dashboard');
         }
     }, [auth.hydrated, auth.isAuthenticated, auth.account, router]);
@@ -72,7 +74,7 @@ export default function AdminDashboard() {
     }, [api]);
 
     useEffect(() => {
-        if (auth.account?.role === 'admin') {
+        if (canAccessAdmin(auth.account?.normalizedRole || auth.account?.role)) {
             fetchStats();
             fetchAccounts();
         }
@@ -139,7 +141,7 @@ export default function AdminDashboard() {
         return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
     };
 
-    if (!auth.hydrated || auth.account?.role !== 'admin') {
+    if (!auth.hydrated || !canAccessAdmin(auth.account?.normalizedRole || auth.account?.role)) {
         return (
             <div className="min-h-screen">
                 <Navbar />
@@ -164,6 +166,12 @@ export default function AdminDashboard() {
                         <h1 className="text-4xl font-bold text-gradient">Admin Dashboard</h1>
                     </div>
                     <p className="text-gray-400">Manage accounts, view platform statistics, and monitor KYC status.</p>
+                    <div className="mt-4">
+                        <Link href="/admin/kyc" className="secondary-button inline-flex items-center gap-2 px-4 py-2">
+                            <ShieldCheck className="w-4 h-4" />
+                            Open KYC Review Queue
+                        </Link>
+                    </div>
                 </div>
 
                 {/* Stats Cards */}

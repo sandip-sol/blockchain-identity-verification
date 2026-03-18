@@ -3,6 +3,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const Account = require('../models/Account');
+const KYCApplication = require('../models/KYCApplication');
 const adminMiddleware = require('../middleware/adminMiddleware');
 
 const router = express.Router();
@@ -113,14 +114,18 @@ router.get('/accounts/:id', async (req, res) => {
 
         // If the account has a linked wallet, try to fetch KYC user data
         let kycUser = null;
+        let kycApplication = null;
         if (account.address) {
             const UserModel = await getMongoUserModel();
             if (UserModel) {
                 kycUser = await UserModel.findOne({ walletAddress: account.address.toLowerCase() }).lean();
             }
+            kycApplication = await KYCApplication.findOne({ walletAddress: account.address.toLowerCase() })
+                .sort({ createdAt: -1 })
+                .lean();
         }
 
-        res.json({ account, kycUser });
+        res.json({ account, kycUser, kycApplication });
     } catch (error) {
         logger.error('Admin get account error:', error);
         res.status(500).json({ error: 'Failed to fetch account' });

@@ -1,0 +1,32 @@
+const { ROLES, normalizeRole, hasAnyRole } = require('../constants/rbac');
+
+const REVIEW_READ_ROLES = [
+  ROLES.SUPER_ADMIN,
+  ROLES.KYC_ADMIN,
+  ROLES.KYC_REVIEWER,
+  ROLES.VERIFIER,
+  ROLES.AUDITOR,
+  ROLES.SUPPORT_READONLY,
+];
+
+const REVIEW_WRITE_ROLES = [
+  ROLES.SUPER_ADMIN,
+  ROLES.KYC_ADMIN,
+  ROLES.KYC_REVIEWER,
+  ROLES.VERIFIER,
+];
+
+const FINALIZE_REVIEW_ROLES = [
+  ROLES.SUPER_ADMIN,
+  ROLES.KYC_ADMIN,
+  ROLES.VERIFIER,
+];
+
+module.exports = {
+  ROLES,
+  normalizeRole,
+  hasAnyRole,
+  REVIEW_READ_ROLES,
+  REVIEW_WRITE_ROLES,
+  FINALIZE_REVIEW_ROLES,
+};

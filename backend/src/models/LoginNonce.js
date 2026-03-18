@@ -8,7 +8,7 @@ const LoginNonceSchema = new mongoose.Schema(
   {
     address: { type: String, required: true, index: true },
     nonce: { type: String, required: true, index: true },
-    expiresAt: { type: Date, required: true, index: true }
+    expiresAt: { type: Date, required: true }
   },
   { timestamps: true }
 );

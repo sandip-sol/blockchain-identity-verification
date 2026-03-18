@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const { ROLES, normalizeRole } = require('../constants/rbac');
 
 /**
  * Account model for email-based authentication.
@@ -10,7 +11,12 @@ const AccountSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     password: { type: String, required: true, select: false }, // Never return password by default
     name: { type: String, trim: true },
-    role: { type: String, enum: ['user', 'admin'], default: 'user' },
+    role: {
+      type: String,
+      enum: [...Object.values(ROLES), 'user', 'admin'],
+      default: ROLES.USER,
+      set: normalizeRole,
+    },
     address: { type: String, index: true, sparse: true }, // Wallet address, linked later
     signatureAsset: {
       cid: { type: String },
@@ -37,6 +43,10 @@ AccountSchema.pre('save', async function (next) {
 // Compare password method
 AccountSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
+};
+
+AccountSchema.methods.getNormalizedRole = function () {
+  return normalizeRole(this.role);
 };
 
 module.exports = mongoose.model('Account', AccountSchema);

@@ -60,9 +60,14 @@ export function useKYC() {
             return response.data;
         } catch (err) {
             console.error('KYC submission error:', err);
-            setError(err.response?.data?.error || err.message);
+            const retryAfter = err.response?.headers?.['retry-after'];
+            const baseMessage = err.response?.data?.error || err.message;
+            const nextError = err.response?.status === 429 && retryAfter
+                ? `${baseMessage} Retry after ${retryAfter} seconds.`
+                : baseMessage;
+            setError(nextError);
             setLoading(false);
-            throw err;
+            throw new Error(nextError);
         }
     }, [address, signMessageAsync]);
 

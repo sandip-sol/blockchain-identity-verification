@@ -1,6 +1,7 @@
 const logger = require('../services/logger');
 const jwt = require('jsonwebtoken');
 const Account = require('../models/Account');
+const { ROLES, normalizeRole } = require('../constants/rbac');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -24,7 +25,7 @@ async function adminMiddleware(req, res, next) {
     }
 
     // Check role from JWT payload first (fast path)
-    if (decoded.role === 'admin') {
+    if (normalizeRole(decoded.role) === ROLES.SUPER_ADMIN) {
         req.user = decoded;
         return next();
     }
@@ -32,10 +33,10 @@ async function adminMiddleware(req, res, next) {
     // Fallback: verify against database in case JWT was issued before role promotion
     try {
         const account = await Account.findById(decoded.sub);
-        if (!account || account.role !== 'admin') {
+        if (!account || normalizeRole(account.role) !== ROLES.SUPER_ADMIN) {
             return res.status(403).json({ error: 'Admin access required' });
         }
-        req.user = decoded;
+        req.user = { ...decoded, role: normalizeRole(account.role) };
         next();
     } catch (err) {
         return res.status(500).json({ error: 'Authorization check failed' });

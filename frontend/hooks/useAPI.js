@@ -1,7 +1,7 @@
 'use client';
 
 import axios from 'axios';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 const API_TIMEOUT = parseInt(process.env.NEXT_PUBLIC_API_TIMEOUT) || 30000;
@@ -76,6 +76,15 @@ export function useAPI() {
         }
     }, []);
 
+    const patch = useCallback(async (url, data, config = {}) => {
+        try {
+            const response = await apiClient.patch(url, data, config);
+            return response.data;
+        } catch (error) {
+            throw error;
+        }
+    }, []);
+
     const del = useCallback(async (url, config = {}) => {
         try {
             const response = await apiClient.delete(url, config);
@@ -85,13 +94,14 @@ export function useAPI() {
         }
     }, []);
 
-    return {
+    return useMemo(() => ({
         get,
         post,
         put,
+        patch,
         delete: del,
         client: apiClient,
-    };
+    }), [get, post, put, patch, del]);
 }
 
 export default apiClient;

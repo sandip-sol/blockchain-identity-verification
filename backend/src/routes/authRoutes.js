@@ -11,6 +11,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 const ipfsService = require('../services/ipfsService');
 const { sha256Hex } = require('../utils/proofUtils');
 const { parseStoredSignaturePng } = require('../utils/signatureUtils');
+const { normalizeRole } = require('../constants/rbac');
 
 const router = express.Router();
 
@@ -61,6 +62,7 @@ function serializeAccount(account) {
     email: account.email,
     name: account.name,
     role: account.role || 'user',
+    normalizedRole: normalizeRole(account.role || 'user'),
     address: account.address,
     createdAt: account.createdAt,
     signatureAsset: account.signatureAsset?.cid ? {
@@ -108,7 +110,7 @@ router.post('/register', async (req, res) => {
 
     // Generate JWT
     const token = jwt.sign(
-      { sub: account._id, email: account.email, role: account.role || 'user', typ: 'email', iat: Math.floor(Date.now() / 1000) },
+      { sub: account._id, email: account.email, role: normalizeRole(account.role || 'user'), typ: 'email', iat: Math.floor(Date.now() / 1000) },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -162,7 +164,7 @@ router.post('/login', async (req, res) => {
 
     // Generate JWT
     const token = jwt.sign(
-      { sub: account._id, email: account.email, role: account.role || 'user', typ: 'email', iat: Math.floor(Date.now() / 1000) },
+      { sub: account._id, email: account.email, role: normalizeRole(account.role || 'user'), typ: 'email', iat: Math.floor(Date.now() / 1000) },
       JWT_SECRET,
       { expiresIn: '7d' }
     );

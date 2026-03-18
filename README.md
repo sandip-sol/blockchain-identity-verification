@@ -175,9 +175,88 @@ kyc-kyb-blockchain/
 ### For Verifiers
 
 1. **Grant Verifier Role**: Contract owner grants `VERIFIER_ROLE`
-2. **Review Applications**: Access backend admin panel
-3. **Verify Documents**: Review submitted KYC/KYB information
-4. **Mint Identity Token**: Approve and mint identity token on-chain
+2. **Review Applications**: Access `/admin/kyc` in the frontend
+3. **Move Cases Through Review**: `SUBMITTED -> UNDER_REVIEW -> APPROVED / REJECTED / RESUBMISSION_REQUIRED`
+4. **Verify Documents**: Review metadata, document hashes, IPFS references, and audit history
+5. **Mint Identity Token**: Trigger `verify-onchain` only after approval
+
+## ✅ KYC Lifecycle
+
+The KYC system now uses an explicit application lifecycle:
+
+- `SUBMITTED`: created or updated when the user sends the KYC form
+- `UNDER_REVIEW`: claimed by an admin or reviewer
+- `APPROVED`: review completed successfully and ready for on-chain minting
+- `REJECTED`: review completed negatively with a mandatory reason
+- `RESUBMISSION_REQUIRED`: applicant must correct or replace evidence
+- `VERIFIED`: blockchain mint completed successfully
+- `FAILED`: on-chain verification failed after approval and the failure was recorded
+
+The legacy `User.verificationStatus` field is still kept in sync for compatibility with existing dashboard/activity flows.
+
+## 🧑‍⚖️ Admin Workflow
+
+1. Open `/admin/kyc` to review the queue.
+2. Filter or search by status, wallet, email, applicant name, or application ID.
+3. Open an application detail page to inspect:
+   - applicant summary metadata
+   - document metadata and hashes
+   - IPFS/data-hash references
+   - blockchain transaction state
+   - immutable audit history
+4. Move the case to `UNDER_REVIEW`.
+5. Approve, reject, or request resubmission.
+6. After approval, trigger `verify-onchain` from the admin UI.
+
+## 🔌 KYC Admin API
+
+New admin-operable KYC endpoints:
+
+- `GET /api/admin/kyc`
+- `GET /api/admin/kyc/:id`
+- `GET /api/admin/kyc/:id/audit`
+- `GET /api/admin/kyc/stats`
+- `PATCH /api/admin/kyc/:id/status`
+- `POST /api/admin/kyc/:id/approve`
+- `POST /api/admin/kyc/:id/reject`
+- `POST /api/admin/kyc/:id/request-resubmission`
+- `POST /api/admin/kyc/:id/verify-onchain`
+- `GET /api/kyc/me?walletAddress=0x...`
+
+## 🔐 Required Roles And Env
+
+Application roles now support:
+
+- `SUPER_ADMIN`
+- `KYC_ADMIN`
+- `KYC_REVIEWER`
+- `VERIFIER`
+- `AUDITOR`
+- `SUPPORT_READONLY`
+
+Important backend environment variables for the upgraded flow:
+
+- `JWT_SECRET`
+- `MASTER_ENCRYPTION_KEY`
+- `MONGODB_URI`
+- `ALLOWED_ORIGINS`
+- `PRIVATE_KEY`
+- `RPC_URL`
+- `VERIFIER_API_KEY`
+
+`VERIFIER_API_KEY` is still supported for the legacy protected `/api/kyc/verify` path, but the intended production flow is the frontend admin action calling `/api/admin/kyc/:id/verify-onchain`.
+
+## 🧪 Local Testing Notes
+
+- Backend workflow unit tests added:
+  - `backend/src/__tests__/kycWorkflowService.test.js`
+  - `backend/src/__tests__/rbacService.test.js`
+- Run them locally with:
+
+```bash
+cd backend
+npx jest src/__tests__/kycWorkflowService.test.js src/__tests__/rbacService.test.js --runInBand
+```
 
 ### For Third Parties
 

@@ -29,6 +29,7 @@ const publicVerificationRoutes = require('./routes/publicVerificationRoutes');
 const activityRoutes = require('./routes/activityRoutes');
 const authRoutes = require('./routes/authRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const adminKycRoutes = require('./routes/adminKycRoutes');
 const web3Service = require('./services/web3Service');
 const ipfsService = require('./services/ipfsService');
 
@@ -62,17 +63,28 @@ if (IS_PRODUCTION && process.env.REDIS_URL) {
     }
 }
 
+const apiLimiterWindowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS || '', 10) || 15 * 60 * 1000;
+const apiLimiterMax = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '', 10) || 100;
+
 const limiter = rateLimit({
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+    windowMs: apiLimiterWindowMs,
+    max: apiLimiterMax,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests, please try again later.' },
     ...(rateLimitStore ? { store: rateLimitStore } : {})
 });
-app.use('/api/', limiter);
+
+if (IS_PRODUCTION) {
+    app.use('/api/', limiter);
+}
 
 // Stricter rate limiting for auth endpoints (brute-force protection)
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 20,
+    max: IS_PRODUCTION ? 20 : 100,
+    standardHeaders: true,
+    legacyHeaders: false,
     message: { error: 'Too many authentication attempts. Please try again later.' },
     ...(rateLimitStore ? { store: rateLimitStore } : {})
 });
@@ -126,6 +138,7 @@ initializeServices();
 // API Routes
 app.use('/api/kyc', kycRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/admin/kyc', adminKycRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/transaction', transactionRoutes);
 app.use('/api/access', accessRoutes);

@@ -239,9 +239,9 @@ export default function SignEnvelopePage() {
                                         <p className="text-gray-400 text-sm">Your status</p>
                                         <p className="text-white font-medium mt-1">{signerStateCopy(myRecipient)}</p>
                                     </div>
-                                    <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+                                    <div className="rounded-lg border border-white/10 bg-white/5 p-4 overflow-hidden min-w-0">
                                         <p className="text-gray-400 text-sm">Next action</p>
-                                        <p className="text-white font-medium mt-1">{env.nextAction}</p>
+                                        <p className="text-white font-medium mt-1 break-all leading-6" style={{ overflowWrap: 'anywhere' }}>{env.nextAction}</p>
                                     </div>
                                 </div>
                                 <div className="mt-4 rounded-lg border border-white/10 bg-white/5 p-4 text-sm text-gray-200">
