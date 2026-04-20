@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon --config nodemon.json src/server.js",
-    "test": "jest --coverage"
+    "test": "jest --coverage",
+    "preview:proof": "node scripts/generateProofPreview.js"
   },
   "keywords": [
     "kyc",
